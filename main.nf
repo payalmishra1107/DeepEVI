@@ -1,97 +1,144 @@
 nextflow.enable.dsl=2
 
 /*
- * Deep-EVI / GSE176078
+ * Deep-EVI canonical end-to-end workflow.
  *
- * STEP 2 — per-sample extraction + QC
- * STEP 3 — per-sample normalization
- *
- * Raw input:
- *   GSM*_CID*.tar.gz
- *
- * Step 2 output:
- *   filtered_<GSM>_<CID>.h5ad
- *
- * Step 3 output:
- *   <GSM>_<CID>_normalized.h5ad
+ * main.nf is the authoritative reproducibility entrypoint.
+ * main_step*.nf are checkpoint/debug interfaces.
  */
 
 params {
     primary_raw_dir = null
-    outdir = "results_step2"
+    tcga_raw = null
+    tcga_query = null
+    tcga_clinical = null
+    tcga_manifest = null
+    reference_signatures = "${projectDir}/config/10a_benchmark_signatures.tsv"
+    immune_subtypes = null
+    multifile_audit = null
 
-    min_genes = 200
-    max_pct_mito = 20.0
-
-    target_sum = 10000.0
+    outdir = "results"
+    run_tcga = true
+    run_heldout = true
+    run_xai = true
+    run_audit = false
 }
 
-include {
-    EXTRACT_QC_SAMPLE
-    AGGREGATE_QC
-} from './modules/02_qc.nf'
+include { INGESTION } from './workflows/01_ingestion.nf'
+include { PREPROCESSING } from './workflows/02_preprocessing.nf'
+include { INTEGRATION } from './workflows/03_integration.nf'
+include { TCELL_ANALYSIS } from './workflows/04_tcell_analysis.nf'
+include { DEEP_EVI_PHASE } from './workflows/05_deep_evi.nf'
+include { TCGA_VALIDATION } from './workflows/06_tcga_validation.nf'
+include { HELDOUT_AND_EXTERNAL_VALIDATION } from './workflows/07_heldout_validation.nf'
+include { XAI } from './workflows/08_xai.nf'
+include { AUDIT } from './workflows/09_audit.nf'
 
-include {
-    NORMALIZE_SAMPLE_V2
-} from './modules/03_normalization.nf'
-
-include {
-    ASSEMBLE_COHORT
-} from './modules/04_cohort_assembly.nf'
 workflow {
-
     if (!params.primary_raw_dir) {
-        error """
-        Missing --primary_raw_dir.
-
-        Example:
-
-        nextflow run main.nf \\
-          -profile conda,workstation \\
-          --primary_raw_dir ~/deepevi/manual_downloads/GSE176078_RAW \\
-          --outdir results_step2 \\
-          -resume
-        """
+        error "Missing --primary_raw_dir"
     }
 
-    /*
-     * Build an explicit tuple:
-     *
-     * (sample_id, archive)
-     *
-     * This preserves the biological sample identity
-     * throughout the Nextflow workflow.
-     */
-    archives = Channel.fromPath(
-        "${params.primary_raw_dir}/GSM*.tar.gz",
-        checkIfExists: true
-    ).map { archive ->
-        def sample_id = archive.baseName.replaceFirst(/\.tar$/, '')
-        tuple(sample_id, archive)
+    INGESTION(params.primary_raw_dir)
+    PREPROCESSING(params.primary_raw_dir)
+
+    INTEGRATION(PREPROCESSING.out.cohort)
+    TCELL_ANALYSIS(INTEGRATION.out.integrated)
+
+    trajectory_landscape = TCELL_ANALYSIS.out.trajectory
+        .filter { it.name == 'tcell_state_landscape.csv' }
+        .first()
+    trajectory_edges = TCELL_ANALYSIS.out.trajectory
+        .filter { it.name == 'tcell_state_knn_edges.csv' }
+        .first()
+    state_scores = TCELL_ANALYSIS.out.state
+        .filter { it.name == 'tcell_expression_program_scores.csv' }
+        .first()
+
+    DEEP_EVI_PHASE(
+        trajectory_landscape,
+        trajectory_edges,
+        state_scores
+    )
+
+    deep_scores = DEEP_EVI_PHASE.out.scores.first()
+    deep_model = DEEP_EVI_PHASE.out.model.first()
+    deep_split = DEEP_EVI_PHASE.out.split.first()
+
+    if (params.run_tcga) {
+        required = [
+            params.tcga_raw,
+            params.tcga_query,
+            params.tcga_clinical,
+            params.tcga_manifest,
+            params.multifile_audit
+        ]
+        if (required.any { !it }) {
+            error "TCGA execution requires --tcga_raw, --tcga_query, --tcga_clinical, --tcga_manifest and --multifile_audit"
+        }
+
+        TCGA_VALIDATION(
+            deep_scores,
+            state_scores,
+            deep_split,
+            Channel.fromPath(params.tcga_raw, type: 'dir', checkIfExists: true).first(),
+            Channel.fromPath(params.tcga_query, checkIfExists: true).first(),
+            Channel.fromPath(params.tcga_clinical, checkIfExists: true).first(),
+            Channel.fromPath(params.tcga_manifest, checkIfExists: true).first(),
+            Channel.fromPath(params.multifile_audit, checkIfExists: true).first()
+        )
     }
 
-    /*
-     * STEP 2
-     * Per-sample extraction and QC.
-     */
-    EXTRACT_QC_SAMPLE(archives)
+    if (params.run_heldout) {
+        if (!file(params.reference_signatures).exists()) {
+            error "Missing --reference_signatures: ${params.reference_signatures}"
+        }
+        if (!params.run_tcga) {
+            error "Held-out/external validation requires TCGA 09B outputs; keep --run_tcga true."
+        }
+        if (!params.immune_subtypes) {
+            error "Held-out/external validation requires --immune_subtypes for Step 10B."
+        }
 
-    /*
-     * Aggregate QC summaries across all samples.
-     */
-    AGGREGATE_QC(
-        EXTRACT_QC_SAMPLE.out.summary.collect()
-    )
+        tcga_scores = TCGA_VALIDATION.out.projection
+            .filter { it.name == 'TCGA_BRCA_09B_TCGA_BRCA_scores.csv' }
+            .first()
+        tcga_inventory = TCGA_VALIDATION.out.projection
+            .filter { it.name == 'TCGA_BRCA_09B_TCGA_BRCA_case_inventory.csv' }
+            .first()
 
-    /*
-     * STEP 3
-     * Normalize each QC-filtered H5AD.
-     *
-     * The sample ID is passed directly with
-     * the H5AD instead of being inferred from
-     * the temporary filename.
-     */
-    NORMALIZE_SAMPLE_V2(
-        EXTRACT_QC_SAMPLE.out.h5ad
-    )
+        HELDOUT_AND_EXTERNAL_VALIDATION(
+            INTEGRATION.out.latent.first(),
+            deep_scores,
+            state_scores,
+            deep_split,
+            Channel.fromPath(params.reference_signatures, checkIfExists: true).first(),
+            tcga_scores,
+            tcga_inventory,
+            Channel.fromPath(params.immune_subtypes, checkIfExists: true).first()
+        )
+    }
+
+    if (params.run_xai) {
+        if (!params.run_tcga) {
+            error "XAI requires the frozen 09A signature; keep --run_tcga true."
+        }
+
+        signature = TCGA_VALIDATION.out.signature
+            .filter { it.name == 'GSE176078_09A_frozen_signature.json' }
+            .first()
+
+        XAI(
+            deep_scores,
+            trajectory_landscape,
+            trajectory_edges,
+            deep_split,
+            deep_model,
+            signature
+        )
+    }
+
+    if (params.run_audit) {
+        AUDIT(Channel.fromPath(projectDir, type: 'dir', checkIfExists: true).first())
+    }
 }
