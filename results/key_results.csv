@@ -1,0 +1,19 @@
+stage,metric,value,interpretation
+Primary cohort,cells,100064,GSE176078 total cells
+Primary cohort,samples,26,GSE176078 samples
+T-cell compartment,cells,35214,Curated T cells
+Deep-EVI,held-out cells,9864,Five held-out samples
+Deep-EVI,test Spearman exhaustion,0.949793,Association with training-derived exhaustion target
+Deep-EVI,test Pearson exhaustion,0.992500,Association with training-derived exhaustion target
+TCGA projection,expression cases,1095,Frozen 33-gene surrogate projection
+TCGA 10B,matched participants,1083,Independent external validation cohort
+TCGA 10B,observed subtypes,5,C1 C2 C3 C4 C6; C5 absent
+TCGA 10B,Kruskal-Wallis H,276.623117,Across five represented immune subtypes
+TCGA 10B,Kruskal-Wallis p,1.191353e-58,Across five represented immune subtypes
+TCGA 10B,C2+C3 vs C4+C6 rank-biserial,0.535666,Pre-specified contrast
+TCGA 10B,C2+C3 vs C4+C6 p,6.778021e-22,Pre-specified contrast
+Step 11,exhaustion program XAI fraction,0.779991,Global mean-absolute attribution fraction
+Step 11,frozen molecular exhaustion fraction,0.867137,Absolute molecular attribution fraction
+Pipeline audit,PASS,82,Master integrity audit
+Pipeline audit,WARN,1,Step 1 publication/provenance warning
+Pipeline audit,FAIL,0,No integrity failures
