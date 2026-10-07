@@ -1,72 +1,175 @@
-# DeepEVI Pipeline Map
+# DeepEVI Pipeline Architecture
 
-This is the authoritative map of executable stages in the repository.
+This document defines the canonical reproducibility architecture.
 
-## Repository conventions
+## 1. Execution hierarchy
 
-- `main_step*.nf`: independently executable stage entrypoints.
-- `modules/`: reusable Nextflow processes.
-- `bin/`: production Python implementations.
-- `envs/`: stage-specific Conda environments.
-- `conf/`: resource and workstation configuration.
-- `config/`: fixed scientific definitions.
-- `docs/`: methods, results, reproducibility, XAI and pipeline documentation.
-- `tests/`: repository-level smoke tests.
-- `results/`: compact result summaries only; raw genomic data and large intermediates are not committed.
+DeepEVI has four layers:
 
-## Stage map
+1. **Canonical orchestration** — `main.nf`
+2. **Phase workflows** — `workflows/*.nf`
+3. **Reusable Nextflow processes** — `modules/*.nf`
+4. **Scientific implementations** — `bin/*.py`
 
-| Stage | Purpose | Entrypoint | Module / implementation |
-|---|---|---|---|
-| 01 | Input inventory / provenance | `main_step1.nf` | `modules/01_ingest.nf` |
-| 02 | Per-sample QC | `main.nf` | `modules/02_qc.nf` |
-| 03 | Normalization | `main.nf` | `modules/03_normalization.nf` |
-| 04 | Cohort assembly | `main_step4.nf` | `modules/04_cohort_assembly.nf` |
-| 05 | HVG + PCA | `main_step5.nf` | `modules/05_integration.nf` |
-| 06 | Harmony candidate | `main_step6.nf` | `modules/06_harmony.nf` |
-| 06A | Quantitative integration evaluation | `main_step6a.nf` | `modules/06a_evaluation.nf` |
-| 06B | Integration benchmark | `main_step6b.nf` | `modules/06b_benchmark.nf` |
-| 07A | TME / T-cell validation | `main_step7a.nf` | `modules/07a_biological_validation.nf` |
-| 07B | T-cell expression programs | `main_step7b.nf` | `modules/07b_tcell_state.nf` |
-| 07C | Expression-state landscape + KNN graph | `main_step7c.nf` | `modules/07c_tcell_trajectory.nf` |
-| 08A | Deep-EVI training | `main_step8a.nf` | `modules/08_deep_evi.nf` |
-| 08B | Deep-EVI characterization | `main_step8b.nf` | `modules/08b_deep_evi_characterization.nf` |
-| 08C | Ablation | `main_step8c.nf` | `modules/08c_deep_evi_ablation.nf` |
-| 08D | Graph diagnostics | `main_step8d.nf` | `modules/08d_deep_evi_graph_diagnostic.nf` |
-| 08E | Robustness / construct analysis | `main_step8e.nf` | `modules/08e_deep_evi_independent_validation.nf` |
-| 09A | Frozen TCGA molecular surrogate | `main_step9a.nf` | `modules/09a_tcga_signature.nf` |
-| 09B | TCGA-BRCA projection | `main_step9b.nf` | `main_step9b.nf` + `bin/run_tcga_brca_09b.py` |
-| 09C | Survival / clinical analysis | `main_step9c.nf` | `bin/run_tcga_brca_09c_clinical_validation.py` |
-| 09D | Bulk-composition analysis | `main_step9d.nf` | `modules/09d_tcga_bulk_composition.nf` |
-| 09E | Biological concordance | `main_step9e.nf` | `modules/09e_tcga_biological_validation.nf` |
-| 10A held-out | Frozen held-out benchmark | `main_step10a.nf` | `modules/10a_heldout_benchmark.nf` + `bin/run_10a_heldout_benchmark.py` |\n| 10A preparation/freeze | Held-out expression, signature scoring and freeze | `main_step10a_freeze.nf` | `bin/build_10a_test_expression.py`, `bin/score_10a_reference_signatures.py`, `modules/10a_freeze.nf` |
-| 10A-5 | State-axis sensitivity | `main_step10a5.nf` | `modules/10a5_state_axis.nf` |
-| 10A-5B | Overlap-controlled sensitivity | `main_step10a5b.nf` | `modules/10a5b_overlap_controlled.nf` |
-| 10B | Independent TCGA immune-subtype validation | `main_step10b.nf` | `modules/10b_tcga_immune_validation.nf` |
-| 11A–C | Frozen Deep-EVI XAI | `main_step11.nf` | `modules/11_deep_evi_xai.nf` |
-| 11D | Gene-level attribution | `main_step11.nf` | `modules/11_deep_evi_xai.nf` |
+The `main_step*.nf` files are checkpoint/debug interfaces. They are not the primary architecture.
 
-## Important architecture note
+## 2. Canonical scientific graph
 
-`main.nf` is deliberately the preprocessing entrypoint for the currently implemented Steps 2–3. It is **not** a monolithic Steps 1–11 launcher. Downstream frozen stages are exposed individually through `main_step*.nf`.
+```text
+GSE176078
+   |
+01 provenance / inventory
+   |
+02 QC
+   |
+03 normalization
+   |
+04 cohort assembly
+   |
+05 HVG + PCA
+   |
+06 Harmony candidate
+   |------------------06A quantitative       06B standardized
+integration evaluation benchmark
+   \------------------/
+             |
+07A TME / T-cell biological validation
+             |
+07B T-cell expression programs
+             |
+07C expression-state landscape + KNN graph
+             |
+08A Deep-EVI
+             |
+     +-------+--------+---------+
+     |       |        |         |
+    08B     08C      08D       08E
+character. ablation graph      robustness
+                         diagnostic
+             |
+          FROZEN
+       Deep-EVI model
+             |
+      +------+---------+
+      |                |
+     09A              10A
+ TCGA molecular    held-out benchmark
+    bridge              |
+      |             10A-5 / 10A-5B
+      |
+     09B
+ TCGA-BRCA projection
+      |
+   +--+----+-----+
+   |       |     |
+  09C     09D   09E
+ survival bulk  biological
+         composition concordance
+      |
+     10B
+ independent TCGA-BRCA
+ immune-subtype validation
+      |
+     11
+ frozen-model XAI
+```
 
-This avoids silently mixing frozen analytical checkpoints and makes provenance easier to audit.
+## 3. Canonical entrypoint
 
-## Scientific boundaries
+The public reproducibility command is:
+
+```bash
+nextflow run main.nf -profile conda,workstation \
+  --primary_raw_dir /path/to/GSE176078_RAW \
+  --tcga_raw /path/to/tcga_brca/raw/star_counts \
+  --tcga_query /path/to/TCGA-BRCA_STAR_Counts_query.json \
+  --tcga_clinical /path/to/TCGA-BRCA_clinical.tsv \
+  --tcga_manifest /path/to/TCGA-BRCA_STAR_Counts_manifest.tsv \
+  --multifile_audit /path/to/multifile_case_file_level_scores.csv \
+  --immune_subtypes /path/to/Subtype_Immune_Model_Based.txt \
+  --reference_signatures config/10a_benchmark_signatures.tsv \
+  --outdir results \
+  -resume
+```
+
+Human genomic data are supplied by the user and are not redistributed by this repository.
+
+## 4. Phase workflows
+
+| Phase | Workflow | Scientific responsibility |
+|---|---|---|
+| 01 | `workflows/01_ingestion.nf` | accession/input inventory and provenance |
+| 02 | `workflows/02_preprocessing.nf` | QC, normalization, cohort assembly |
+| 03 | `workflows/03_integration.nf` | HVG/PCA, Harmony candidate, quantitative evaluation |
+| 04 | `workflows/04_tcell_analysis.nf` | TME validation, T-cell programs, state landscape |
+| 05 | `workflows/05_deep_evi.nf` | Deep-EVI and robustness/diagnostic analyses |
+| 06 | `workflows/06_tcga_validation.nf` | frozen molecular bridge and TCGA analyses |
+| 07 | `workflows/07_heldout_validation.nf` | held-out benchmarking and 10B validation |
+| 08 | `workflows/08_xai.nf` | frozen-model explainability |
+| 09 | `workflows/09_audit.nf` | integrity audit |
+
+## 5. Stage/checkpoint entrypoints
+
+The individual `main_step*.nf` files remain available for checkpoint reproduction, debugging and review.
+
+Steps 1–11 now have explicit checkpoint interfaces, including:
+
+- `main_step1.nf`
+- `main_step2.nf`
+- `main_step3.nf`
+- `main_step4.nf`
+- `main_step5.nf`
+- `main_step6.nf`
+- `main_step6a.nf`
+- `main_step6b.nf`
+- `main_step7a.nf`
+- `main_step7b.nf`
+- `main_step7c.nf`
+- `main_step8a.nf` through `main_step8e.nf`
+- `main_step9a.nf` through `main_step9e.nf`
+- `main_step10a.nf`, `main_step10a5.nf`, `main_step10a5b.nf`, `main_step10a_freeze.nf`, `main_step10b.nf`
+- `main_step11.nf`
+
+## 6. Reproducibility boundaries
+
+### Primary cohort
+
+All cell-level model development originates from GSE176078.
+
+### Deep-EVI freeze
+
+The Deep-EVI model and the six-program-to-TCGA molecular bridge are frozen before TCGA biological validation.
+
+### Held-out validation
+
+10A uses the exact held-out sample split produced by 08A. Test cells are not used for training or model selection.
+
+### Independent validation
+
+10B uses an independent TCGA-BRCA cohort and published immune-subtype labels. TCGA labels are not used to train, refit, select features or optimize cutoffs.
+
+### Explainability
+
+Step 11 operates on the frozen Deep-EVI model. It explains model behaviour and does not establish causality.
+
+## 7. Scientific interpretation boundaries
 
 - 07C is an expression-state landscape, not RNA velocity.
-- Deep-EVI is an exhaustion-associated state index, not a temporal or causal quantity.
-- 10A is held-out construct/state benchmarking.
+- Deep-EVI is a continuous exhaustion-associated state index, not a temporal trajectory.
+- The exhaustion target is model-derived; high recovery against that target is not independent biological validation.
 - 10B is the principal independent biological validation.
-- 11 explains frozen model behaviour and does not establish causality.
+- XAI is interpretive, not causal.
 
-## Adding a stage
+## 8. Design rule
 
-When a new analytical stage is added:
+New analytical work must enter through:
 
-1. add/update its reusable module;
-2. add a dedicated `main_step*.nf` entrypoint when independently runnable;
-3. add the matching Conda environment;
-4. document the input/output contract here;
-5. add a representative path to `tests/test_repository_layout.py`;
-6. update the README only after the executable structure is stable.
+```text
+main.nf
+  -> workflows/
+  -> modules/
+  -> bin/
+  -> envs/
+```
+
+A notebook or manually executed Python script must not become a required step in the scientific chain.
