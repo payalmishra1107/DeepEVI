@@ -1,0 +1,11 @@
+name: deepevi-integration
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - anndata>=0.10
+  - scanpy>=1.10
+  - numpy
+  - scipy
+  - scikit-learn
+  - h5py
