@@ -1,0 +1,10 @@
+name: deepevi-qc
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - anndata>=0.10
+  - pandas>=2
+  - numpy
+  - scipy
+  - h5py
