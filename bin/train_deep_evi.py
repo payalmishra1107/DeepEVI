@@ -997,4 +997,1875 @@ def main():
             "target_cell",
             "distance",
             "delta_exhaustion",
-            "delta_activation",
+            "delta_activation",        ],
+        "T-cell KNN graph",
+    )
+
+    # =========================================================================
+    # Validate Step 7B scores
+    # =========================================================================
+
+    require_columns(
+        scores,
+        [
+            "cell_id",
+            "sample_id",
+            "subtype",
+            "celltype_major",
+            "celltype_subset",
+        ] + PROGRAMS,
+        "T-cell expression program scores",
+    )
+
+    print(
+        f"Landscape rows: {len(landscape)}"
+    )
+
+    print(
+        f"Graph edges: {len(edges)}"
+    )
+
+    print(
+        f"Score rows: {len(scores)}"
+    )
+
+    # =========================================================================
+    # Normalize IDs
+    # =========================================================================
+
+    landscape = landscape.copy()
+    edges = edges.copy()
+    scores = scores.copy()
+
+    landscape["cell_id"] = (
+        landscape[
+            "cell_id"
+        ]
+        .astype(str)
+        .str.strip()
+    )
+
+    edges["source_cell"] = (
+        edges[
+            "source_cell"
+        ]
+        .astype(str)
+        .str.strip()
+    )
+
+    edges["target_cell"] = (
+        edges[
+            "target_cell"
+        ]
+        .astype(str)
+        .str.strip()
+    )
+
+    scores["cell_id"] = (
+        scores[
+            "cell_id"
+        ]
+        .astype(str)
+        .str.strip()
+    )
+
+    # =========================================================================
+    # Check unique cell IDs
+    # =========================================================================
+
+    if landscape[
+        "cell_id"
+    ].duplicated().any():
+
+        raise ValueError(
+            "Duplicate cell IDs in Step 7C landscape."
+        )
+
+    if scores[
+        "cell_id"
+    ].duplicated().any():
+
+        raise ValueError(
+            "Duplicate cell IDs in Step 7B score table."
+        )
+
+    # =========================================================================
+    # Step 7B ↔ Step 7C alignment
+    # =========================================================================
+
+    landscape_ids = set(
+        landscape[
+            "cell_id"
+        ]
+    )
+
+    score_ids = set(
+        scores[
+            "cell_id"
+        ]
+    )
+
+    missing_scores = (
+        landscape_ids
+        - score_ids
+    )
+
+    extra_scores = (
+        score_ids
+        - landscape_ids
+    )
+
+    if missing_scores:
+
+        examples = sorted(
+            missing_scores
+        )[:10]
+
+        raise ValueError(
+            "Step 7B score table is missing "
+            f"{len(missing_scores)} cells from Step 7C. "
+            f"Examples: {examples}"
+        )
+
+    if extra_scores:
+
+        examples = sorted(
+            extra_scores
+        )[:10]
+
+        raise ValueError(
+            "Step 7B score table contains "
+            f"{len(extra_scores)} cells absent from Step 7C. "
+            f"Examples: {examples}"
+        )
+
+    # =========================================================================
+    # IMPORTANT:
+    # Step 7B is the authoritative source for all six program scores.
+    #
+    # Step 7C already contains activation/exhaustion values because they were
+    # used in the state-landscape construction. We remove ALL overlapping
+    # program columns before merging so pandas does not create _x/_y columns.
+    # =========================================================================
+
+    landscape = landscape.drop(
+        columns=[
+            column
+            for column in PROGRAMS
+            if column in landscape.columns
+        ],
+        errors="ignore",
+    )
+
+    score_features = scores[
+        [
+            "cell_id"
+        ] + PROGRAMS
+    ].copy()
+
+    landscape = landscape.merge(
+        score_features,
+        on="cell_id",
+        how="left",
+        validate="one_to_one",
+    )
+
+    if landscape[
+        PROGRAMS
+    ].isna().any().any():
+
+        missing_counts = (
+            landscape[
+                PROGRAMS
+            ]
+            .isna()
+            .sum()
+            .to_dict()
+        )
+
+        raise ValueError(
+            "Missing program scores remain after "
+            "Step 7B/7C alignment: "
+            f"{missing_counts}"
+        )
+
+    print(
+        "Program scores aligned: "
+        f"{len(score_features)} cells"
+    )
+
+    # =========================================================================
+    # Verify metadata consistency
+    # =========================================================================
+
+    metadata_check = landscape[
+        [
+            "cell_id",
+            "sample_id",
+            "subtype",
+            "celltype_subset",
+        ]
+    ].merge(
+        scores[
+            [
+                "cell_id",
+                "sample_id",
+                "subtype",
+                "celltype_subset",
+            ]
+        ],
+        on="cell_id",
+        how="left",
+        validate="one_to_one",
+        suffixes=(
+            "_landscape",
+            "_scores",
+        ),
+    )
+
+    sample_mismatch = (
+        metadata_check[
+            "sample_id_landscape"
+        ].astype(str)
+        !=
+        metadata_check[
+            "sample_id_scores"
+        ].astype(str)
+    )
+
+    subtype_mismatch = (
+        metadata_check[
+            "subtype_landscape"
+        ].astype(str)
+        !=
+        metadata_check[
+            "subtype_scores"
+        ].astype(str)
+    )
+
+    subset_mismatch = (
+        metadata_check[
+            "celltype_subset_landscape"
+        ].astype(str)
+        !=
+        metadata_check[
+            "celltype_subset_scores"
+        ].astype(str)
+    )
+
+    if sample_mismatch.any():
+        raise ValueError(
+            "Sample IDs differ between Step 7B and Step 7C."
+        )
+
+    if subtype_mismatch.any():
+        raise ValueError(
+            "Subtype labels differ between Step 7B and Step 7C."
+        )
+
+    if subset_mismatch.any():
+        raise ValueError(
+            "Celltype subset labels differ between Step 7B and Step 7C."
+        )
+
+    # =========================================================================
+    # Graph coverage
+    # =========================================================================
+
+    all_landscape_cells = set(
+        landscape[
+            "cell_id"
+        ]
+    )
+
+    missing_source = (
+        set(
+            edges[
+                "source_cell"
+            ]
+        )
+        - all_landscape_cells
+    )
+
+    missing_target = (
+        set(
+            edges[
+                "target_cell"
+            ]
+        )
+        - all_landscape_cells
+    )
+
+    if missing_source:
+
+        raise ValueError(
+            "Graph contains source cells absent from Step 7C: "
+            f"{len(missing_source)}"
+        )
+
+    if missing_target:
+
+        raise ValueError(
+            "Graph contains target cells absent from Step 7C: "
+            f"{len(missing_target)}"
+        )
+
+    # =========================================================================
+    # Curated T-cell compartment
+    # =========================================================================
+
+    major = (
+        scores[
+            [
+                "cell_id",
+                "celltype_major",
+            ]
+        ]
+        .copy()
+    )
+
+    major[
+        "celltype_major"
+    ] = (
+        major[
+            "celltype_major"
+        ]
+        .astype(str)
+        .str.strip()
+    )
+
+    landscape = landscape.merge(
+        major,
+        on="cell_id",
+        how="left",
+        validate="one_to_one",
+    )
+
+    tcell_mask = (
+        landscape[
+            "celltype_major"
+        ]
+        == "T-cells"
+    )
+
+    if not tcell_mask.any():
+
+        raise ValueError(
+            "No curated T cells were identified."
+        )
+
+    tcell_count = int(
+        tcell_mask.sum()
+    )
+
+    print(
+        f"Curated T cells: {tcell_count}"
+    )
+
+    if tcell_count != 35214:
+
+        print(
+            "WARNING: expected 35214 curated "
+            f"T cells but found {tcell_count}."
+        )
+
+    # =========================================================================
+    # Restrict to curated T cells
+    # =========================================================================
+
+    landscape = (
+        landscape.loc[
+            tcell_mask
+        ]
+        .reset_index(
+            drop=True
+        )
+    )
+
+    cell_ids = (
+        landscape[
+            "cell_id"
+        ]
+        .astype(str)
+        .tolist()
+    )
+
+    cell_set = set(
+        cell_ids
+    )
+
+    edges = edges[
+        edges[
+            "source_cell"
+        ].isin(cell_set)
+        &
+        edges[
+            "target_cell"
+        ].isin(cell_set)
+    ].copy()
+
+    if len(edges) == 0:
+
+        raise ValueError(
+            "No graph edges remain after restricting "
+            "to curated T cells."
+        )
+
+    print(
+        f"T-cell graph edges: {len(edges)}"
+    )
+
+    # =========================================================================
+    # Feature matrix
+    # =========================================================================
+
+    X_raw = landscape[
+        PROGRAMS
+    ].to_numpy(
+        dtype=np.float32
+    )
+
+    if not np.isfinite(
+        X_raw
+    ).all():
+
+        raise ValueError(
+            "Non-finite values detected in program scores."
+        )
+
+    # =========================================================================
+    # Sample-level train/validation/test split
+    # =========================================================================
+
+    (
+        split_labels,
+        train_samples,
+        validation_samples,
+        test_samples,
+    ) = make_sample_split(
+        landscape[
+            [
+                "sample_id",
+                "subtype",
+            ]
+        ],
+        args.train_fraction,
+        args.validation_fraction,
+        args.seed,
+    )
+
+    landscape[
+        "_split"
+    ] = split_labels
+
+    train_mask = (
+        landscape[
+            "_split"
+        ].to_numpy()
+        == "train"
+    )
+
+    validation_mask = (
+        landscape[
+            "_split"
+        ].to_numpy()
+        == "validation"
+    )
+
+    test_mask = (
+        landscape[
+            "_split"
+        ].to_numpy()
+        == "test"
+    )
+
+    # =========================================================================
+    # Train-only feature scaling
+    # =========================================================================
+
+    X_scaled_train, feature_mean, feature_std = (
+        zscore_columns(
+            X_raw[
+                train_mask
+            ]
+        )
+    )
+
+    X_scaled = apply_zscore(
+        X_raw,
+        feature_mean,
+        feature_std,
+    )
+
+    # =========================================================================
+    # Targets
+    # =========================================================================
+
+    exhaustion_target_raw = (
+        landscape[
+            "exhaustion_dysfunction_score"
+        ]
+        .to_numpy(
+            dtype=np.float32
+        )
+    )
+
+    activation_target_raw = (
+        landscape[
+            "activation_effector_score"
+        ]
+        .to_numpy(
+            dtype=np.float32
+        )
+    )
+
+    exhaustion_train_mean = float(
+        exhaustion_target_raw[
+            train_mask
+        ].mean()
+    )
+
+    exhaustion_train_std = float(
+        exhaustion_target_raw[
+            train_mask
+        ].std()
+    )
+
+    if exhaustion_train_std < 1e-8:
+        exhaustion_train_std = 1.0
+
+    activation_train_mean = float(
+        activation_target_raw[
+            train_mask
+        ].mean()
+    )
+
+    activation_train_std = float(
+        activation_target_raw[
+            train_mask
+        ].std()
+    )
+
+    if activation_train_std < 1e-8:
+        activation_train_std = 1.0
+
+    exhaustion_target = (
+        (
+            exhaustion_target_raw
+            - exhaustion_train_mean
+        )
+        / exhaustion_train_std
+    ).astype(
+        np.float32
+    )
+
+    activation_target = (
+        (
+            activation_target_raw
+            - activation_train_mean
+        )
+        / activation_train_std
+    ).astype(
+        np.float32
+    )
+
+    # =========================================================================
+    # Split manifest
+    # =========================================================================
+
+    split_manifest = landscape[
+        [
+            "cell_id",
+            "sample_id",
+            "subtype",
+            "celltype_subset",
+            "_split",
+        ]
+    ].copy()
+
+    split_manifest = split_manifest.rename(
+        columns={
+            "_split": "split"
+        }
+    )
+
+    split_manifest.to_csv(
+        output_dir
+        / "GSE176078_deep_evi_split_manifest.csv",
+        index=False,
+    )
+
+    print(
+        f"Train samples: {len(train_samples)}"
+    )
+
+    print(
+        f"Validation samples: {len(validation_samples)}"
+    )
+
+    print(
+        f"Test samples: {len(test_samples)}"
+    )
+
+    print(
+        f"Train cells: {int(train_mask.sum())}"
+    )
+
+    print(
+        f"Validation cells: {int(validation_mask.sum())}"
+    )
+
+    print(
+        f"Test cells: {int(test_mask.sum())}"
+    )
+
+    # =========================================================================
+    # Build split-specific graphs
+    # =========================================================================
+
+    split_graphs = {}
+
+    for split_name, mask in [
+        ("train", train_mask),
+        ("validation", validation_mask),
+        ("test", test_mask),
+    ]:
+
+        split_ids = (
+            landscape.loc[
+                mask,
+                "cell_id",
+            ]
+            .astype(str)
+            .tolist()
+        )
+
+        adjacency, internal_edges = (
+            build_local_graph(
+                edges,
+                split_ids,
+            )
+        )
+
+        split_graphs[
+            split_name
+        ] = {
+            "ids": split_ids,
+            "adjacency": adjacency,
+            "internal_edges": internal_edges,
+        }
+
+        print(
+            f"{split_name} graph: "
+            f"{len(internal_edges)} internal edges, "
+            f"{adjacency.nnz} adjacency entries"
+        )
+
+    # =========================================================================
+    # Tensor preparation
+    # =========================================================================
+
+    train_indices = np.where(
+        train_mask
+    )[0]
+
+    validation_indices = np.where(
+        validation_mask
+    )[0]
+
+    test_indices = np.where(
+        test_mask
+    )[0]
+
+    X_train_tensor = torch.tensor(
+        X_scaled[
+            train_indices
+        ],
+        dtype=torch.float32,
+        device=device,
+    )
+
+    X_validation_tensor = torch.tensor(
+        X_scaled[
+            validation_indices
+        ],
+        dtype=torch.float32,
+        device=device,
+    )
+
+    X_test_tensor = torch.tensor(
+        X_scaled[
+            test_indices
+        ],
+        dtype=torch.float32,
+        device=device,
+    )
+
+    programs_train = X_train_tensor
+    programs_validation = X_validation_tensor
+    programs_test = X_test_tensor
+
+    y_train = torch.tensor(
+        exhaustion_target[
+            train_indices
+        ],
+        dtype=torch.float32,
+        device=device,
+    )
+
+    y_validation = torch.tensor(
+        exhaustion_target[
+            validation_indices
+        ],
+        dtype=torch.float32,
+        device=device,
+    )
+
+    y_test = torch.tensor(
+        exhaustion_target[
+            test_indices
+        ],
+        dtype=torch.float32,
+        device=device,
+    )
+
+    a_train = torch.tensor(
+        activation_target[
+            train_indices
+        ],
+        dtype=torch.float32,
+        device=device,
+    )
+
+    a_validation = torch.tensor(
+        activation_target[
+            validation_indices
+        ],
+        dtype=torch.float32,
+        device=device,
+    )
+
+    a_test = torch.tensor(
+        activation_target[
+            test_indices
+        ],
+        dtype=torch.float32,
+        device=device,
+    )
+
+    A_train = scipy_to_torch_sparse(
+        split_graphs[
+            "train"
+        ][
+            "adjacency"
+        ],
+        device,
+    )
+
+    A_validation = scipy_to_torch_sparse(
+        split_graphs[
+            "validation"
+        ][
+            "adjacency"
+        ],
+        device,
+    )
+
+    A_test = scipy_to_torch_sparse(
+        split_graphs[
+            "test"
+        ][
+            "adjacency"
+        ],
+        device,
+    )
+
+    # =========================================================================
+    # Model
+    # =========================================================================
+
+    model = DeepEVIModel(
+        input_dim=len(PROGRAMS),
+        hidden_dim=args.hidden_dim,
+        latent_dim=args.latent_dim,
+        output_dim=len(PROGRAMS),
+        dropout=args.dropout,
+    ).to(
+        device
+    )
+
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=args.learning_rate,
+        weight_decay=args.weight_decay,
+    )
+
+    # =========================================================================
+    # Training
+    # =========================================================================
+
+    history = []
+
+    best_validation_loss = float(
+        "inf"
+    )
+
+    best_epoch = 0
+
+    best_state = None
+
+    epochs_without_improvement = 0
+
+    print("=" * 80)
+    print("TRAINING")
+    print("=" * 80)
+
+    for epoch in range(
+        1,
+        args.epochs + 1,
+    ):
+
+        model.train()
+
+        optimizer.zero_grad(
+            set_to_none=True
+        )
+
+        (
+            z_train,
+            program_pred_train,
+            exhaustion_pred_train,
+            activation_pred_train,
+        ) = model(
+            X_train_tensor,
+            A_train,
+        )
+
+        program_loss = F.mse_loss(
+            program_pred_train,
+            programs_train,
+        )
+
+        exhaustion_loss = F.mse_loss(
+            exhaustion_pred_train,
+            y_train,
+        )
+
+        activation_loss = F.mse_loss(
+            activation_pred_train,
+            a_train,
+        )
+
+        smoothness_loss = (
+            graph_smoothness_loss(
+                z_train,
+                A_train,
+            )
+        )
+
+        total_loss = (
+            1.00
+            * program_loss
+            + 0.25
+            * exhaustion_loss
+            + 0.10
+            * activation_loss
+            + 0.05
+            * smoothness_loss
+        )
+
+        total_loss.backward()
+
+        torch.nn.utils.clip_grad_norm_(
+            model.parameters(),
+            max_norm=5.0,
+        )
+
+        optimizer.step()
+
+        # ---------------------------------------------------------------------
+        # Validation
+        # ---------------------------------------------------------------------
+
+        model.eval()
+
+        with torch.no_grad():
+
+            (
+                z_validation,
+                program_pred_validation,
+                exhaustion_pred_validation,
+                activation_pred_validation,
+            ) = model(
+                X_validation_tensor,
+                A_validation,
+            )
+
+            validation_program_loss = F.mse_loss(
+                program_pred_validation,
+                programs_validation,
+            )
+
+            validation_exhaustion_loss = F.mse_loss(
+                exhaustion_pred_validation,
+                y_validation,
+            )
+
+            validation_activation_loss = F.mse_loss(
+                activation_pred_validation,
+                a_validation,
+            )
+
+            validation_smoothness_loss = (
+                graph_smoothness_loss(
+                    z_validation,
+                    A_validation,
+                )
+            )
+
+            validation_total_loss = (
+                1.00
+                * validation_program_loss
+                + 0.25
+                * validation_exhaustion_loss
+                + 0.10
+                * validation_activation_loss
+                + 0.05
+                * validation_smoothness_loss
+            )
+
+        train_loss_value = float(
+            total_loss.item()
+        )
+
+        validation_loss_value = float(
+            validation_total_loss.item()
+        )
+
+        history.append(
+            {
+                "epoch": epoch,
+                "train_loss": train_loss_value,
+                "train_program_loss": float(
+                    program_loss.item()
+                ),
+                "train_exhaustion_loss": float(
+                    exhaustion_loss.item()
+                ),
+                "train_activation_loss": float(
+                    activation_loss.item()
+                ),
+                "train_smoothness_loss": float(
+                    smoothness_loss.item()
+                ),
+                "validation_loss": validation_loss_value,
+                "validation_program_loss": float(
+                    validation_program_loss.item()
+                ),
+                "validation_exhaustion_loss": float(
+                    validation_exhaustion_loss.item()
+                ),
+                "validation_activation_loss": float(
+                    validation_activation_loss.item()
+                ),
+                "validation_smoothness_loss": float(
+                    validation_smoothness_loss.item()
+                ),
+            }
+        )
+
+        print(
+            f"Epoch {epoch:04d} | "
+            f"train={train_loss_value:.6f} | "
+            f"validation={validation_loss_value:.6f}"
+        )
+
+        if (
+            validation_loss_value
+            < best_validation_loss
+        ):
+
+            best_validation_loss = (
+                validation_loss_value
+            )
+
+            best_epoch = epoch
+
+            best_state = {
+                key: value.detach().cpu().clone()
+                for key, value
+                in model.state_dict().items()
+            }
+            epochs_without_improvement = 0
+
+        else:
+
+            epochs_without_improvement += 1
+
+        if (
+            epochs_without_improvement
+            >= args.patience
+        ):
+
+            print(
+                f"Early stopping at epoch {epoch}."
+            )
+
+            break
+
+    if best_state is None:
+
+        raise RuntimeError(
+            "No valid model checkpoint was produced."
+        )
+
+    model.load_state_dict(
+        best_state
+    )
+
+    # =========================================================================
+    # Test prediction
+    # =========================================================================
+
+    model.eval()
+
+    with torch.no_grad():
+
+        (
+            z_train,
+            program_pred_train,
+            exhaustion_pred_train,
+            activation_pred_train,
+        ) = model(
+            X_train_tensor,
+            A_train,
+        )
+
+        (
+            z_validation,
+            program_pred_validation,
+            exhaustion_pred_validation,
+            activation_pred_validation,
+        ) = model(
+            X_validation_tensor,
+            A_validation,
+        )
+
+        (
+            z_test,
+            program_pred_test,
+            exhaustion_pred_test,
+            activation_pred_test,
+        ) = model(
+            X_test_tensor,
+            A_test,
+        )
+
+    train_exhaustion_prediction = (
+        exhaustion_pred_train
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    validation_exhaustion_prediction = (
+        exhaustion_pred_validation
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    test_exhaustion_prediction = (
+        exhaustion_pred_test
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    train_activation_prediction = (
+        activation_pred_train
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    validation_activation_prediction = (
+        activation_pred_validation
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    test_activation_prediction = (
+        activation_pred_test
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    # =========================================================================
+    # Target arrays
+    # =========================================================================
+
+    y_train_np = (
+        y_train
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    y_validation_np = (
+        y_validation
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    y_test_np = (
+        y_test
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    a_train_np = (
+        a_train
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    a_validation_np = (
+        a_validation
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    a_test_np = (
+        a_test
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    # =========================================================================
+    # Orient learned exhaustion axis
+    # =========================================================================
+
+    train_orientation_corr = safe_corr(
+        train_exhaustion_prediction,
+        y_train_np,
+    )
+
+    if (
+        np.isfinite(
+            train_orientation_corr
+        )
+        and train_orientation_corr >= 0
+    ):
+        orientation_sign = 1.0
+    else:
+        orientation_sign = -1.0
+
+    train_oriented = (
+        orientation_sign
+        * train_exhaustion_prediction
+    )
+
+    validation_oriented = (
+        orientation_sign
+        * validation_exhaustion_prediction
+    )
+
+    test_oriented = (
+        orientation_sign
+        * test_exhaustion_prediction
+    )
+
+    # =========================================================================
+    # Training-only EVI scaling
+    # =========================================================================
+
+    evi_mean = float(
+        train_oriented.mean()
+    )
+
+    evi_std = float(
+        train_oriented.std()
+    )
+
+    if evi_std < 1e-8:
+        evi_std = 1.0
+
+    # =========================================================================
+    # Full-cell EVI arrays
+    # =========================================================================
+
+    deep_evi = np.zeros(
+        len(landscape),
+        dtype=np.float32,
+    )
+
+    deep_evi[
+        train_indices
+    ] = (
+        train_oriented
+        - evi_mean
+    ) / evi_std
+
+    deep_evi[
+        validation_indices
+    ] = (
+        validation_oriented
+        - evi_mean
+    ) / evi_std
+
+    deep_evi[
+        test_indices
+    ] = (
+        test_oriented
+        - evi_mean
+    ) / evi_std
+
+    exhaustion_prediction = np.zeros(
+        len(landscape),
+        dtype=np.float32,
+    )
+
+    exhaustion_prediction[
+        train_indices
+    ] = train_exhaustion_prediction
+
+    exhaustion_prediction[
+        validation_indices
+    ] = validation_exhaustion_prediction
+
+    exhaustion_prediction[
+        test_indices
+    ] = test_exhaustion_prediction
+
+    activation_prediction = np.zeros(
+        len(landscape),
+        dtype=np.float32,
+    )
+
+    activation_prediction[
+        train_indices
+    ] = train_activation_prediction
+
+    activation_prediction[
+        validation_indices
+    ] = validation_activation_prediction
+
+    activation_prediction[
+        test_indices
+    ] = test_activation_prediction
+
+    # =========================================================================
+    # Prediction table
+    # =========================================================================
+
+    predictions = landscape[
+        [
+            "cell_id",
+            "sample_id",
+            "subtype",
+            "celltype_subset",
+        ]
+    ].copy()
+
+    predictions[
+        "split"
+    ] = landscape[
+        "_split"
+    ].to_numpy()
+
+    predictions[
+        "tcell_identity_score"
+    ] = landscape[
+        "tcell_identity_score"
+    ].to_numpy()
+
+    predictions[
+        "cd8_cytotoxic_score"
+    ] = landscape[
+        "cd8_cytotoxic_score"
+    ].to_numpy()
+
+    predictions[
+        "treg_score"
+    ] = landscape[
+        "treg_score"
+    ].to_numpy()
+
+    predictions[
+        "tfh_score"
+    ] = landscape[
+        "tfh_score"
+    ].to_numpy()
+
+    predictions[
+        "activation_effector_score"
+    ] = landscape[
+        "activation_effector_score"
+    ].to_numpy()
+
+    predictions[
+        "exhaustion_dysfunction_score"
+    ] = landscape[
+        "exhaustion_dysfunction_score"
+    ].to_numpy()
+
+    predictions[
+        "deep_evi_raw"
+    ] = deep_evi
+
+    predictions[
+        "deep_evi_exhaustion_prediction"
+    ] = exhaustion_prediction
+
+    predictions[
+        "deep_evi_activation_prediction"
+    ] = activation_prediction
+
+    # =========================================================================
+    # Latent representation
+    # =========================================================================
+
+    latent = np.zeros(
+        (
+            len(landscape),
+            args.latent_dim,
+        ),
+        dtype=np.float32,
+    )
+
+    latent[
+        train_indices
+    ] = (
+        z_train
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    latent[
+        validation_indices
+    ] = (
+        z_validation
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    latent[
+        test_indices
+    ] = (
+        z_test
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    latent_columns = [
+        f"deep_evi_latent_{i + 1}"
+        for i in range(
+            args.latent_dim
+        )
+    ]
+
+    latent_df = pd.DataFrame(
+        latent,
+        columns=latent_columns,
+    )
+
+    latent_df.insert(
+        0,
+        "cell_id",
+        landscape[
+            "cell_id"
+        ].to_numpy(),
+    )
+
+    latent_df.insert(
+        1,
+        "sample_id",
+        landscape[
+            "sample_id"
+        ].to_numpy(),
+    )
+
+    latent_df.insert(
+        2,
+        "subtype",
+        landscape[
+            "subtype"
+        ].to_numpy(),
+    )
+
+    latent_df.insert(
+        3,
+        "split",
+        landscape[
+            "_split"
+        ].to_numpy(),
+    )
+
+    # =========================================================================
+    # Metrics
+    # =========================================================================
+
+    validation_exhaustion_corr = safe_corr(
+        validation_oriented,
+        y_validation_np,
+    )
+
+    test_exhaustion_corr = safe_corr(
+        test_oriented,
+        y_test_np,
+    )
+
+    validation_activation_corr = safe_corr(
+        validation_activation_prediction,
+        a_validation_np,
+    )
+
+    test_activation_corr = safe_corr(
+        test_activation_prediction,
+        a_test_np,
+    )
+
+    test_exhaustion_rmse = safe_rmse(
+        y_test_np,
+        test_oriented,
+    )
+
+    test_exhaustion_mae = safe_mae(
+        y_test_np,
+        test_oriented,
+    )
+
+    test_exhaustion_r2 = safe_r2(
+        y_test_np,
+        test_oriented,
+    )
+
+    # =========================================================================
+    # Save cell-level results
+    # =========================================================================
+
+    predictions.to_csv(
+        output_dir
+        / "GSE176078_deep_evi_scores.csv",
+        index=False,
+    )
+
+    latent_df.to_csv(
+        output_dir
+        / "GSE176078_deep_evi_latent.csv",
+        index=False,
+    )
+
+    pd.DataFrame(
+        history
+    ).to_csv(
+        output_dir
+        / "GSE176078_deep_evi_training_history.csv",
+        index=False,
+    )
+
+    # =========================================================================
+    # Sample summary
+    # =========================================================================
+
+    sample_summary = (
+        predictions
+        .groupby(
+            "sample_id",
+            as_index=False,
+        )
+        .agg(
+            n_cells=(
+                "cell_id",
+                "size",
+            ),
+            mean_deep_evi=(
+                "deep_evi_raw",
+                "mean",
+            ),
+            median_deep_evi=(
+                "deep_evi_raw",
+                "median",
+            ),
+            mean_exhaustion_score=(
+                "exhaustion_dysfunction_score",
+                "mean",
+            ),
+            mean_activation_score=(
+                "activation_effector_score",
+                "mean",
+            ),
+        )
+    )
+
+    sample_summary.to_csv(
+        output_dir
+        / "GSE176078_deep_evi_by_sample.csv",
+        index=False,
+    )
+
+    # =========================================================================
+    # Subtype summary
+    # =========================================================================
+
+    subtype_summary = (
+        predictions
+        .groupby(
+            "subtype",
+            as_index=False,
+        )
+        .agg(
+            n_cells=(
+                "cell_id",
+                "size",
+            ),
+            mean_deep_evi=(
+                "deep_evi_raw",
+                "mean",
+            ),
+            median_deep_evi=(
+                "deep_evi_raw",
+                "median",
+            ),
+            mean_exhaustion_score=(
+                "exhaustion_dysfunction_score",
+                "mean",
+            ),
+            mean_activation_score=(
+                "activation_effector_score",
+                "mean",
+            ),
+        )
+    )
+
+    subtype_summary.to_csv(
+        output_dir
+        / "GSE176078_deep_evi_by_subtype.csv",
+        index=False,
+    )
+
+    # =========================================================================
+    # Annotation summary
+    # =========================================================================
+
+    annotation_summary = (
+        predictions
+        .groupby(
+            "celltype_subset",
+            as_index=False,
+        )
+        .agg(
+            n_cells=(
+                "cell_id",
+                "size",
+            ),
+            mean_deep_evi=(
+                "deep_evi_raw",
+                "mean",
+            ),
+            median_deep_evi=(
+                "deep_evi_raw",
+                "median",
+            ),
+            mean_exhaustion_score=(
+                "exhaustion_dysfunction_score",
+                "mean",
+            ),
+            mean_activation_score=(
+                "activation_effector_score",
+                "mean",
+            ),
+        )
+    )
+
+    annotation_summary.to_csv(
+        output_dir
+        / "GSE176078_deep_evi_by_annotation.csv",
+        index=False,
+    )
+
+    # =========================================================================
+    # Save model
+    # =========================================================================
+
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "programs": PROGRAMS,
+            "hidden_dim": args.hidden_dim,
+            "latent_dim": args.latent_dim,
+            "dropout": args.dropout,
+            "orientation_sign": orientation_sign,
+            "evi_mean": evi_mean,
+            "evi_std": evi_std,
+            "feature_mean": feature_mean,
+            "feature_std": feature_std,
+            "seed": args.seed,
+            "best_epoch": best_epoch,
+        },
+        output_dir
+        / "GSE176078_deep_evi_model.pt",
+    )
+
+    # =========================================================================
+    # Report
+    # =========================================================================
+
+    report = {
+        "cohort": "GSE176078",
+
+        "step": "08A_deep_evi",
+
+        "scientific_definition": (
+            "Deep-EVI is a graph-learned continuous T-cell "
+            "state index trained from six expression-derived "
+            "biological programs and a sample-restricted "
+            "30-nearest-neighbor T-cell graph."
+        ),
+
+        "not_rna_velocity": True,
+
+        "velocity_warning": (
+            "This implementation does not infer RNA velocity. "
+            "The GSE176078 processed matrices used here do not "
+            "contain the spliced/unspliced layers required for "
+            "true RNA velocity estimation."
+        ),
+
+        "cells": int(
+            len(landscape)
+        ),
+
+        "curated_t_cells": int(
+            tcell_count
+        ),
+
+        "program_dimensions": len(
+            PROGRAMS
+        ),
+
+        "programs": PROGRAMS,
+
+        "landscape_input": str(
+            args.landscape
+        ),
+
+        "graph_input": str(
+            args.edges
+        ),
+
+        "score_input": str(
+            args.scores
+        ),
+
+        "graph_edges_total": int(
+            len(edges)
+        ),
+
+        "sample_split": {
+            "train_samples": train_samples,
+            "validation_samples": validation_samples,
+            "test_samples": test_samples,
+            "train_cells": int(
+                train_mask.sum()
+            ),
+            "validation_cells": int(
+                validation_mask.sum()
+            ),
+            "test_cells": int(
+                test_mask.sum()
+            ),
+        },
+
+        "graph_split": {
+            "train_internal_edges": int(
+                len(
+                    split_graphs[
+                        "train"
+                    ][
+                        "internal_edges"
+                    ]
+                )
+            ),
+            "validation_internal_edges": int(
+                len(
+                    split_graphs[
+                        "validation"
+                    ][
+                        "internal_edges"
+                    ]
+                )
+            ),
+            "test_internal_edges": int(
+                len(
+                    split_graphs[
+                        "test"
+                    ][
+                        "internal_edges"
+                    ]
+                )
+            ),
+            "train_adjacency_nnz": int(
+                split_graphs[
+                    "train"
+                ][
+                    "adjacency"
+                ].nnz
+            ),
+            "validation_adjacency_nnz": int(
+                split_graphs[
+                    "validation"
+                ][
+                    "adjacency"
+                ].nnz
+            ),
+            "test_adjacency_nnz": int(
+                split_graphs[
+                    "test"
+                ][
+                    "adjacency"
+                ].nnz
+            ),
+        },
+
+        "model": {
+            "hidden_dim": args.hidden_dim,
+            "latent_dim": args.latent_dim,
+            "dropout": args.dropout,
+            "learning_rate": args.learning_rate,
+            "weight_decay": args.weight_decay,
+            "max_epochs": args.epochs,
+            "patience": args.patience,
+            "best_epoch": int(
+                best_epoch
+            ),
+        },
+
+        "validation_metrics": {
+            "exhaustion_correlation": validation_exhaustion_corr,
+            "activation_correlation": validation_activation_corr,
+        },
+
+        "test_metrics": {
+            "exhaustion_correlation": test_exhaustion_corr,
+            "exhaustion_rmse": test_exhaustion_rmse,
+            "exhaustion_mae": test_exhaustion_mae,
+            "exhaustion_r2": test_exhaustion_r2,
+            "activation_correlation": test_activation_corr,
+        },
+
+        "orientation": {
+            "training_exhaustion_correlation": train_orientation_corr,
+            "orientation_sign": orientation_sign,
+            "higher_deep_evi_direction": (
+                "higher learned exhaustion-associated state"
+                if orientation_sign > 0
+                else "lower learned exhaustion-associated state"
+            ),
+        },
+
+        "training": {
+            "best_validation_loss": float(
+                best_validation_loss
+            ),
+            "epochs_completed": len(
+                history
+            ),
+        },
+
+        "leakage_controls": {
+            "sample_level_split": True,
+            "cross_split_graph_edges_removed": True,
+            "test_used_for_model_selection": False,
+            "feature_scaling_fit_on_training_only": True,
+            "evi_standardization_fit_on_training_only": True,
+        },
+
+        "data_interface": {
+            "step_7b_scores_are_authoritative": True,
+            "step_7c_landscape_provides_state_geometry": True,
+            "step_7c_graph_provides_neighbor_structure": True,
+            "program_score_join_key": "cell_id",
+            "aligned_cells": int(
+                len(score_features)
+            ),
+        },
+
+        "status": "complete",
+    }
+
+    with open(
+        output_dir
+        / "GSE176078_deep_evi_report.json",
+        "w",
+        encoding="utf-8",
+    ) as handle:
+
+        json.dump(
+            report,
+            handle,
+            indent=2,
+        )
+
+    print("=" * 80)
+    print("DEEP-EVI COMPLETE")
+    print("=" * 80)
+
+    print(
+        f"Best epoch: {best_epoch}"
+    )
+
+    print(
+        f"Best validation loss: "
+        f"{best_validation_loss:.6f}"
+    )
+
+    print(
+        f"Validation exhaustion correlation: "
+        f"{validation_exhaustion_corr:.6f}"
+    )
+
+    print(
+        f"Test exhaustion correlation: "
+        f"{test_exhaustion_corr:.6f}"
+    )
+
+    print(
+        f"Test exhaustion RMSE: "
+        f"{test_exhaustion_rmse:.6f}"
+    )
+
+    print(
+        f"Test exhaustion MAE: "
+        f"{test_exhaustion_mae:.6f}"
+    )
+
+    print(
+        f"Test exhaustion R2: "
+        f"{test_exhaustion_r2:.6f}"
+    )
+
+    print(
+        f"Test activation correlation: "
+        f"{test_activation_corr:.6f}"
+    )
+
+    print(
+        "Outputs written to:",
+        output_dir,
+    )
+
+
+if __name__ == "__main__":
+    main()
