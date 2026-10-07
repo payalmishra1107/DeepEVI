@@ -1,8 +1,9 @@
 # DeepEVI
 
 ## Deep learning–driven modelling of tumour–immune dynamics and T-cell exhaustion in breast cancer
+(DeepEVI is a graph neural network–based computational framework for modelling T-cell exhaustion and tumour–immune dynamics in breast cancer using single-cell transcriptomics. The framework integrates transcriptional state modelling, cell–cell graph representations, latent representation learning, and a Deep Exhaustion Velocity Index (Deep-EVI) to quantify exhaustion-associated T-cell states. Its performance is evaluated through leakage-controlled held-out benchmarking, ablation and graph-dependency analyses, and independently validated using TCGA-BRCA cohorts. Explainable AI and biomarker analyses are incorporated to identify molecular programs associated with T-cell dysfunction and tumour–immune states)
 
-**DeepEVI** is a reproducible Nextflow DSL2 research pipeline combining single-cell transcriptomics, tumour-microenvironment biology, statistical genomics, machine learning, graph deep learning, external cohort validation and explainable AI.
+**DeepEVI** is a reproducible Nextflow DSL2 research pipeline combining single-cell transcriptomics, tumour-microenvironment biology, statistical genomics, machine learning, graph deep learning, external cohort validation and explainable AI.**
 
 > **Scientific scope:** DeepEVI is a graph-learned continuous **exhaustion-associated T-cell state index**. It is **not RNA velocity**, not a temporal trajectory, and not a causal or clinical prediction model.
 
