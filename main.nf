@@ -44,15 +44,13 @@ workflow {
     INTEGRATION(PREPROCESSING.out.cohort)
     TCELL_ANALYSIS(INTEGRATION.out.integrated)
 
-    trajectory_landscape = TCELL_ANALYSIS.out.trajectory
+    trajectory_landscape = TCELL_ANALYSIS.out.trajectory_csv
         .filter { it.name == 'tcell_state_landscape.csv' }
         .first()
-    trajectory_edges = TCELL_ANALYSIS.out.trajectory
+    trajectory_edges = TCELL_ANALYSIS.out.trajectory_csv
         .filter { it.name == 'tcell_state_knn_edges.csv' }
         .first()
-    state_scores = TCELL_ANALYSIS.out.state
-        .filter { it.name == 'tcell_expression_program_scores.csv' }
-        .first()
+    state_scores = TCELL_ANALYSIS.out.state_scores
 
     DEEP_EVI_PHASE(
         trajectory_landscape,
