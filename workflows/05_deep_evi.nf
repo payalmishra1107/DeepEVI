@@ -10,6 +10,7 @@ workflow DEEP_EVI_PHASE {
     landscape
     edges
     scores
+    state_scores
 
     main:
     DEEP_EVI(landscape, edges, scores)
@@ -26,12 +27,6 @@ workflow DEEP_EVI_PHASE {
     DEEP_EVI_ABLATION(landscape, edges, deep_scores, deep_split)
     DEEP_EVI_GRAPH_DIAGNOSTIC(landscape, edges, deep_scores, deep_split)
 
-    // 08E consumes the frozen 08A split manifest; it does not alter the model.
-    // Step 7B state scores are the second biological input to this robustness analysis.
-    // The state-score file is recovered from the 08A score table contract below.
-    state_scores = DEEP_EVI.out.csv
-        .filter { it.name == 'GSE176078_08A_state_scores.csv' }
-        .first()
     DEEP_EVI_INDEPENDENT_VALIDATION(landscape, deep_scores, state_scores, deep_split)
 
     emit:
