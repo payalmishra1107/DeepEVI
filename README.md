@@ -231,7 +231,6 @@ nextflow run main.nf -profile conda,workstation \
   --tcga_query /path/to/TCGA-BRCA_STAR_Counts_query.json \
   --tcga_clinical /path/to/TCGA-BRCA_clinical.tsv \
   --tcga_manifest /path/to/TCGA-BRCA_STAR_Counts_manifest.tsv \
-  --multifile_audit /path/to/multifile_case_file_level_scores.csv \
   --immune_subtypes /path/to/Subtype_Immune_Model_Based.txt \
   --reference_signatures config/10a_benchmark_signatures.tsv \
   --outdir results \
