@@ -997,3 +997,66 @@ def main():
             "convergence_required": True,
             "convergence_achieved": adjusted_complete,
         },
+        "stage_group_counts": {
+            str(row["stage_group"]): int(row["n"])
+            for _, row in stage_counts.iterrows()
+        },
+
+        "multi_file_handling": {
+            "multi_file_case_count": int(
+                len(multi_file_cases)
+            ),
+            "aggregation": (
+                "09B arithmetic mean of file-level frozen "
+                "molecular surrogate scores"
+            ),
+            "clinical_outcomes_used_for_aggregation": False,
+            "multi_file_survival_model": False,
+        },
+
+        "limitations": [
+            (
+                "TCGA score is a bulk molecular surrogate and "
+                "may reflect immune-cell abundance."
+            ),
+            (
+                "ER/HER2/TNBC/PAM50 molecular subtype variables "
+                "were not available and were not inferred."
+            ),
+            (
+                "The 11 multi-file cases have reproducible "
+                "arithmetic-mean aggregation, but available "
+                "GDC metadata do not establish the biological "
+                "relationship among their expression files."
+            ),
+            (
+                "Survival association is not by itself "
+                "independent biological validation of T-cell "
+                "exhaustion."
+            ),
+            (
+                "The adjusted Cox model uses age and grouped "
+                "AJCC pathologic stage because individual-stage "
+                "dummy expansion produced sparse-category "
+                "convergence problems."
+            ),
+        ],
+    }
+
+    with open(
+        outdir / "GSE176078_09C_report.json",
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(
+            report,
+            handle,
+            indent=2,
+            allow_nan=False,
+        )
+
+    print(json.dumps(report, indent=2))
+
+
+if __name__ == "__main__":
+    main()
