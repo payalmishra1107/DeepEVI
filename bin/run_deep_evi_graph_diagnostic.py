@@ -997,4 +997,638 @@ def main():
     # ----------------------------------------------------------
 
     sample_ids = (
-        merged["sample_id"]
+        merged["sample_id"]        .astype(str)
+        .to_numpy()
+    )
+
+    unknown_samples = (
+        set(sample_ids)
+        - set(split_map)
+    )
+
+    if unknown_samples:
+        raise RuntimeError(
+            "Samples absent from split manifest: "
+            f"{sorted(unknown_samples)}"
+        )
+
+    split = np.array([
+        split_map[s]
+        for s in sample_ids
+    ])
+
+    train_idx = np.where(
+        split == "train"
+    )[0]
+
+    val_idx = np.where(
+        split == "validation"
+    )[0]
+
+    test_idx = np.where(
+        split == "test"
+    )[0]
+
+    if min(
+        len(train_idx),
+        len(val_idx),
+        len(test_idx),
+    ) == 0:
+        raise RuntimeError(
+            "One or more partitions is empty."
+        )
+
+    print(
+        "Cell split: "
+        f"train={len(train_idx)}, "
+        f"validation={len(val_idx)}, "
+        f"test={len(test_idx)}"
+    )
+
+    # ----------------------------------------------------------
+    # TRAIN-ONLY FEATURE STANDARDIZATION
+    # ----------------------------------------------------------
+
+    feature_scaler = StandardScaler()
+
+    feature_scaler.fit(
+        raw_X[train_idx]
+    )
+
+    X = feature_scaler.transform(
+        raw_X
+    ).astype(np.float32)
+
+    # ----------------------------------------------------------
+    # TRAIN-ONLY TARGET STANDARDIZATION
+    # ----------------------------------------------------------
+
+    def train_zscore(y):
+
+        mean = float(
+            np.mean(y[train_idx])
+        )
+
+        std = float(
+            np.std(y[train_idx])
+        )
+
+        if std < 1e-8:
+            std = 1.0
+
+        return (
+            (y - mean) / std
+        ).astype(np.float32)
+
+    exhaustion_scaled = train_zscore(
+        exhaustion
+    )
+
+    activation_scaled = train_zscore(
+        activation
+    )
+
+    program_target = X.copy()
+
+    # ----------------------------------------------------------
+    # RAW GRAPH / SPLIT ISOLATION AUDIT
+    # ----------------------------------------------------------
+    #
+    # The Step 7C KNN graph is constructed over the complete
+    # curated T-cell population. Therefore cross-split edges
+    # are expected to exist in the raw edge table.
+    #
+    # They must NOT be treated as leakage by themselves.
+    # The leakage control is that these edges are removed before
+    # the graph is supplied to each model.
+    #
+
+    cell_ids = (
+        merged["cell_id"]
+        .astype(str)
+        .tolist()
+    )
+
+    split_by_cell = {
+        cell_ids[i]: split[i]
+        for i in range(len(cell_ids))
+    }
+
+    edge_source = (
+        edges["source_cell"]
+        .astype(str)
+        .str.strip()
+    )
+
+    edge_target = (
+        edges["target_cell"]
+        .astype(str)
+        .str.strip()
+    )
+
+    valid_raw_edges = (
+        edge_source.isin(split_by_cell)
+        &
+        edge_target.isin(split_by_cell)
+    )
+
+    audit_edges = edges.loc[
+        valid_raw_edges,
+        ["source_cell", "target_cell"]
+    ].copy()
+
+    source_split = (
+        audit_edges["source_cell"]
+        .map(split_by_cell)
+    )
+
+    target_split = (
+        audit_edges["target_cell"]
+        .map(split_by_cell)
+    )
+
+    raw_cross_split_edges = int(
+        (
+            source_split
+            != target_split
+        ).sum()
+    )
+
+    raw_within_split_edges = int(
+        (
+            source_split
+            == target_split
+        ).sum()
+    )
+
+    raw_edges_checked = int(
+        len(audit_edges)
+    )
+
+    print(
+        "Raw graph audit: "
+        f"edges_checked={raw_edges_checked}, "
+        f"within_split={raw_within_split_edges}, "
+        f"cross_split={raw_cross_split_edges}"
+    )
+
+    if raw_edges_checked == 0:
+        raise RuntimeError(
+            "No usable graph edges were found after "
+            "matching edge cell IDs to the curated T-cell "
+            "population."
+        )
+
+    # ----------------------------------------------------------
+    # SPLIT-ISOLATED GRAPHS
+    # ----------------------------------------------------------
+
+    graph_by_split = {}
+
+    for split_name, idx in [
+        ("train", train_idx),
+        ("validation", val_idx),
+        ("test", test_idx),
+    ]:
+
+        allowed = set(
+            cell_ids[i]
+            for i in idx
+        )
+
+        sub_edges = edges[
+            edges["source_cell"].astype(str).isin(
+                allowed
+            )
+            &
+            edges["target_cell"].astype(str).isin(
+                allowed
+            )
+        ].copy()
+
+        local_ids = [
+            cell_ids[i]
+            for i in idx
+        ]
+
+        local_map = {
+            cid: j
+            for j, cid in enumerate(local_ids)
+        }
+
+        A_sym, n_edges = build_graph(
+            sub_edges,
+            local_map,
+            allowed,
+            normalization="symmetric",
+        )
+
+        A_row, _ = build_graph(
+            sub_edges,
+            local_map,
+            allowed,
+            normalization="row",
+        )
+
+        graph_by_split[split_name] = {
+            "indices": idx,
+            "symmetric": A_sym,
+            "row": A_row,
+            "edges": n_edges,
+        }
+
+        print(
+            f"{split_name} graph: "
+            f"{n_edges} original edges; "
+            f"{A_sym._nnz()} adjacency entries"
+        )
+
+    # ----------------------------------------------------------
+    # GLOBAL BLOCK-DIAGONAL ADJACENCY
+    # ----------------------------------------------------------
+
+    def assemble_global_adjacency(
+        normalization
+    ):
+
+        rows = []
+        cols = []
+        vals = []
+
+        for split_name in [
+            "train",
+            "validation",
+            "test",
+        ]:
+
+            idx = graph_by_split[
+                split_name
+            ]["indices"]
+
+            A = graph_by_split[
+                split_name
+            ][normalization]
+
+            if A._nnz() == 0:
+                continue
+
+            local = A.coalesce()
+
+            r = (
+                local.indices()[0]
+                .cpu()
+                .numpy()
+            )
+
+            c = (
+                local.indices()[1]
+                .cpu()
+                .numpy()
+            )
+
+            v = (
+                local.values()
+                .cpu()
+                .numpy()
+            )
+
+            rows.append(idx[r])
+            cols.append(idx[c])
+            vals.append(v)
+
+        if not rows:
+
+            return torch.sparse_coo_tensor(
+                torch.empty(
+                    (2, 0),
+                    dtype=torch.long,
+                ),
+                torch.empty(
+                    (0,),
+                    dtype=torch.float32,
+                ),
+                size=(
+                    len(merged),
+                    len(merged),
+                ),
+            ).coalesce()
+
+        return torch.sparse_coo_tensor(
+            np.vstack([
+                np.concatenate(rows),
+                np.concatenate(cols),
+            ]),
+            np.concatenate(vals).astype(
+                np.float32
+            ),
+            size=(
+                len(merged),
+                len(merged),
+            ),
+        ).coalesce()
+
+    # ----------------------------------------------------------
+    # FINAL GRAPH ISOLATION AUDIT
+    # ----------------------------------------------------------
+    #
+    # Every model adjacency is assembled from the three
+    # split-specific graphs above. Therefore the final
+    # block-diagonal adjacency contains no cross-split edges.
+    #
+
+    retained_split_edges = int(
+        sum(
+            graph_by_split[name]["edges"]
+            for name in [
+                "train",
+                "validation",
+                "test",
+            ]
+        )
+    )
+
+    if (
+        retained_split_edges
+        != raw_within_split_edges
+    ):
+        raise RuntimeError(
+            "Split graph construction mismatch: "
+            f"raw within-split edges="
+            f"{raw_within_split_edges}, "
+            f"retained="
+            f"{retained_split_edges}"
+        )
+
+    print(
+        "Split-isolation audit: PASS; "
+        f"raw_cross_split_edges="
+        f"{raw_cross_split_edges}; "
+        f"retained_within_split_edges="
+        f"{retained_split_edges}"
+    )
+
+    # ----------------------------------------------------------
+    # DIAGNOSTIC VARIANTS
+    # ----------------------------------------------------------
+
+    variants = [
+        {
+            "name": "no_graph",
+            "graph": False,
+            "smoothness": False,
+            "normalization": "symmetric",
+        },
+        {
+            "name": "graph_no_smoothness",
+            "graph": True,
+            "smoothness": False,
+            "normalization": "symmetric",
+        },
+        {
+            "name": "graph_current",
+            "graph": True,
+            "smoothness": True,
+            "normalization": "symmetric",
+        },
+        {
+            "name": "graph_row_normalized",
+            "graph": True,
+            "smoothness": True,
+            "normalization": "row",
+        },
+    ]
+
+    all_metrics = []
+    all_history = []
+
+    for variant in variants:
+
+        print(
+            "\n=================================================="
+        )
+
+        print(
+            f"Running 08D variant: {variant['name']}"
+        )
+
+        print(
+            "=================================================="
+        )
+
+        adj = assemble_global_adjacency(
+            variant["normalization"]
+        )
+
+        (
+            metrics,
+            history,
+            evi,
+            latent,
+            model,
+        ) = train_variant(
+            X=X,
+            program_target=program_target,
+            exhaustion_target=exhaustion_scaled,
+            activation_target=activation_scaled,
+            adj=adj,
+            train_idx=train_idx,
+            val_idx=val_idx,
+            test_idx=test_idx,
+            variant=variant["name"],
+            use_graph=variant["graph"],
+            use_smoothness=variant["smoothness"],
+            epochs=args.epochs,
+            patience=args.patience,
+            hidden_dim=args.hidden_dim,
+            latent_dim=args.latent_dim,
+            dropout=args.dropout,
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
+            seed=args.seed,
+        )
+
+        metrics["normalization"] = (
+            variant["normalization"]
+        )
+
+        all_metrics.append(metrics)
+        all_history.append(history)
+
+        score_df = merged[
+            [
+                "cell_id",
+                "sample_id",
+                "subtype",
+                "celltype_subset",
+            ]
+        ].copy()
+
+        score_df["split"] = split
+        score_df["deep_evi"] = evi
+        score_df["exhaustion_target"] = exhaustion
+        score_df["activation_target"] = activation
+
+        score_df.to_csv(
+            outdir
+            / (
+                "GSE176078_08D_"
+                f"{variant['name']}_scores.csv"
+            ),
+            index=False,
+        )
+
+        torch.save(
+            model.state_dict(),
+            outdir
+            / (
+                "GSE176078_08D_"
+                f"{variant['name']}_model.pt"
+            ),
+        )
+
+    metrics_df = pd.DataFrame(
+        all_metrics
+    )
+
+    history_df = pd.concat(
+        all_history,
+        ignore_index=True,
+    )
+
+    metrics_df.to_csv(
+        outdir
+        / "GSE176078_08D_graph_diagnostic_metrics.csv",
+        index=False,
+    )
+
+    history_df.to_csv(
+        outdir
+        / "GSE176078_08D_training_history.csv",
+        index=False,
+    )
+
+    # ----------------------------------------------------------
+    # REPORT
+    # ----------------------------------------------------------
+
+    report = {
+        "cohort": "GSE176078",
+        "step": "08D_deep_evi_graph_architecture_diagnostic",
+        "status": "complete",
+        "cells": int(len(merged)),
+        "samples": int(
+            merged["sample_id"].nunique()
+        ),
+
+        "train_cells": int(len(train_idx)),
+        "validation_cells": int(len(val_idx)),
+        "test_cells": int(len(test_idx)),
+
+        "variants": [
+            {
+                "name": "no_graph",
+                "graph": False,
+                "smoothness": False,
+                "normalization": "not_applicable",
+            },
+            {
+                "name": "graph_no_smoothness",
+                "graph": True,
+                "smoothness": False,
+                "normalization": "symmetric",
+            },
+            {
+                "name": "graph_current",
+                "graph": True,
+                "smoothness": True,
+                "normalization": "symmetric",
+            },
+            {
+                "name": "graph_row_normalized",
+                "graph": True,
+                "smoothness": True,
+                "normalization": "row",
+            },
+        ],
+
+        "sample_split_reused": True,
+
+        "leakage_controls": {
+            "sample_level_split": True,
+            "same_08A_split_manifest": True,
+            "cross_split_graph_edges_removed": True,
+            "raw_cross_split_edges_expected_and_removed": True,
+            "raw_cross_split_edges": raw_cross_split_edges,
+            "raw_within_split_edges": raw_within_split_edges,
+            "retained_within_split_edges": retained_split_edges,
+            "final_model_graph_cross_split_edges": 0,
+            "feature_scaling_training_only": True,
+            "target_scaling_training_only": True,
+            "training_smoothness_edges_only": True,
+            "test_used_for_model_selection": False,
+            "evi_orientation_training_only": True,
+        },
+
+        "data_provenance": {
+            "curated_tcell_population": (
+                "Step 8A score table"
+            ),
+            "cell_alignment_key": "cell_id",
+            "curated_tcell_count": 35214,
+            "celltype_major_required": False,
+        },
+
+        "scientific_purpose": (
+            "08D isolates whether the performance "
+            "difference observed in 08C is attributable "
+            "to graph message passing, the graph "
+            "smoothness regularizer, or adjacency "
+            "normalization."
+        ),
+
+        "interpretation_policy": (
+            "This diagnostic does not establish RNA "
+            "velocity or independent biological validation. "
+            "It evaluates the contribution of graph "
+            "architecture to a learned exhaustion-associated "
+            "T-cell state index."
+        ),
+    }
+
+    with open(
+        outdir / "GSE176078_08D_report.json",
+        "w",
+    ) as handle:
+
+        json.dump(
+            report,
+            handle,
+            indent=2,
+        )
+
+    print(
+        "\n=================================================="
+    )
+
+    print(
+        "08D completed successfully."
+    )
+
+    print(
+        "=================================================="
+    )
+
+    print(
+        metrics_df[
+            [
+                "variant",
+                "test_evi_exhaustion_spearman",
+                "test_evi_exhaustion_pearson",
+                "test_evi_activation_spearman",
+            ]
+        ].to_string(index=False)
+    )
+
+
+if __name__ == "__main__":
+    main()
