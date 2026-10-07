@@ -12,7 +12,7 @@ process TCGA_BRCA_09D {
     time '4h'
     maxForks 1
 
-    conda "${baseDir}/envs/deepevi-tcga-clinical.yml"
+    conda "${baseDir}/envs/deep_evi_tcga_clinical.yml"
 
     input:
     path scores
