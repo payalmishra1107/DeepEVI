@@ -2,35 +2,57 @@ name: DeepEVI CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  static-validation:
+  python-smoke:
+    name: Python smoke tests
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Python syntax check
-        run: |
-          if [ -d bin ]; then
-            find bin -type f -name "*.py" -print0 | xargs -0 -r -n1 python -m py_compile
-          fi
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Validate required repository structure
+      - name: Install test dependencies
         run: |
-          test -f README.md
-          test -f CITATION.cff
-          test -f LICENSE
-          test -f .gitignore
-          test -d docs
-          test -d results
+          python -m pip install --upgrade pip
+          python -m pip install pytest
 
-      - name: Validate citation repository URL
-        run: |
-          grep -q 'https://github.com/payalmishra1107/DeepEVI' CITATION.cff
+      - name: Compile production Python
+        run: python -m compileall -q bin
 
-      - name: Validate scientific terminology safeguards
+      - name: Run repository smoke test
+        run: pytest -q tests/test_repository_layout.py
+
+  nextflow-smoke:
+    name: Nextflow configuration smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Nextflow
+        uses: nf-core/setup-nextflow@v2
+        with:
+          version: "25.10.2"
+
+      - name: Validate Nextflow configuration
+        run: nextflow config nextflow.config
+
+      - name: Preview core preprocessing entrypoint
         run: |
-          grep -q 'not RNA velocity' README.md
-          grep -q 'not a causal' README.md
+          mkdir -p tests/fixtures/primary_raw
+          nextflow run main.nf \
+            --primary_raw_dir tests/fixtures/primary_raw \
+            --outdir results_ci \
+            -preview
