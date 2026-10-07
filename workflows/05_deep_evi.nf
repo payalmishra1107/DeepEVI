@@ -9,11 +9,10 @@ workflow DEEP_EVI_PHASE {
     take:
     landscape
     edges
-    scores
     state_scores
 
     main:
-    DEEP_EVI(landscape, edges, scores)
+    DEEP_EVI(landscape, edges, state_scores)
 
     deep_scores = DEEP_EVI.out.csv
         .filter { it.name == 'GSE176078_deep_evi_scores.csv' }
