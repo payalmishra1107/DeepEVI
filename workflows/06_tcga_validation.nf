@@ -14,7 +14,6 @@ workflow TCGA_VALIDATION {
     tcga_query
     tcga_clinical
     tcga_manifest
-    multifile_audit
 
     main:
     BUILD_TCGA_SIGNATURE(deep_scores, state_scores, split_manifest)
@@ -46,7 +45,7 @@ workflow TCGA_VALIDATION {
         .filter { it.name == 'multifile_case_file_level_scores.csv' }
         .first()
 
-    TCGA_BRCA_09C(tcga_scores, tcga_survival, tcga_clinical, multifile_audit)
+    TCGA_BRCA_09C(tcga_scores, tcga_survival, tcga_clinical, multifile)
     TCGA_BRCA_09D(tcga_scores, tcga_survival, tcga_clinical)
 
     pathways = Channel.fromPath("${projectDir}/config/09e_validation_pathways.tsv", checkIfExists: true).first()
