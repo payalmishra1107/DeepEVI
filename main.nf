@@ -58,6 +58,7 @@ workflow {
     DEEP_EVI_PHASE(
         trajectory_landscape,
         trajectory_edges,
+        state_scores,
         state_scores
     )
 
