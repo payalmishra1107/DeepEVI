@@ -1,0 +1,36 @@
+name: DeepEVI CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  static-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python syntax check
+        run: |
+          if [ -d bin ]; then
+            find bin -type f -name "*.py" -print0 | xargs -0 -r -n1 python -m py_compile
+          fi
+
+      - name: Validate required repository structure
+        run: |
+          test -f README.md
+          test -f CITATION.cff
+          test -f LICENSE
+          test -f .gitignore
+          test -d docs
+          test -d results
+
+      - name: Validate citation repository URL
+        run: |
+          grep -q 'https://github.com/payalmishra1107/DeepEVI' CITATION.cff
+
+      - name: Validate scientific terminology safeguards
+        run: |
+          grep -q 'not RNA velocity' README.md
+          grep -q 'not a causal' README.md
