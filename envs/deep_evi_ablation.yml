@@ -1,0 +1,12 @@
+name: deepevi-deep-evi-ablation
+channels:
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pytorch
+  - cpuonly
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn

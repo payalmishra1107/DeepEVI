@@ -1,0 +1,12 @@
+name: deepevi-xai
+channels:
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pytorch
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - h5py

@@ -1,0 +1,9 @@
+name: deepevi-deep-evi-characterization
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pandas
+  - numpy
+  - scipy
+  - scikit-learn

@@ -1,0 +1,9 @@
+name: deepevi-10a-state-axis
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn

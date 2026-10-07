@@ -1,0 +1,11 @@
+name: deepevi-tcga-validation
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pandas
+  - numpy
+  - scipy
+  - scikit-learn
+  - requests
+  - lifelines
