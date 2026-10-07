@@ -39,7 +39,7 @@ This is the authoritative map of executable stages in the repository.
 | 09C | Survival / clinical analysis | `main_step9c.nf` | `bin/run_tcga_brca_09c_clinical_validation.py` |
 | 09D | Bulk-composition analysis | `main_step9d.nf` | `modules/09d_tcga_bulk_composition.nf` |
 | 09E | Biological concordance | `main_step9e.nf` | `modules/09e_tcga_biological_validation.nf` |
-| 10A held-out | Frozen held-out benchmark | `main_step10a_freeze.nf` plus benchmark scripts | `bin/build_10a_test_expression.py`, `bin/score_10a_reference_signatures.py`, `bin/run_10a_heldout_benchmark.py` |
+| 10A held-out | Frozen held-out benchmark | `main_step10a.nf` | `modules/10a_heldout_benchmark.nf` + `bin/run_10a_heldout_benchmark.py` |\n| 10A preparation/freeze | Held-out expression, signature scoring and freeze | `main_step10a_freeze.nf` | `bin/build_10a_test_expression.py`, `bin/score_10a_reference_signatures.py`, `modules/10a_freeze.nf` |
 | 10A-5 | State-axis sensitivity | `main_step10a5.nf` | `modules/10a5_state_axis.nf` |
 | 10A-5B | Overlap-controlled sensitivity | `main_step10a5b.nf` | `modules/10a5b_overlap_controlled.nf` |
 | 10B | Independent TCGA immune-subtype validation | `main_step10b.nf` | `modules/10b_tcga_immune_validation.nf` |
