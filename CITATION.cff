@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+title: "DeepEVI: Deep Learning–Driven Modelling of Tumour–Immune Dynamics and T-Cell Exhaustion in Breast Cancer"
+message: "If you use this software or analysis framework, please cite this repository and the associated manuscript when available."
+type: software
+authors:
+  - family-names: Mishra
+    given-names: Payal
+year: 2026
+version: "1.0.0"
+repository-code: "https://github.com/payalmishra1107/DeepEVI"
+keywords:
+  - single-cell RNA-seq
+  - breast cancer
+  - T-cell exhaustion
+  - graph neural networks
+  - deep learning
+  - bioinformatics
+  - explainable AI
+  - TCGA-BRCA
+license: MIT
