@@ -4,22 +4,36 @@ include { DEEP_EVI_CHARACTERIZATION } from '../modules/08b_deep_evi_characteriza
 include { DEEP_EVI_ABLATION } from '../modules/08c_deep_evi_ablation.nf'
 include { DEEP_EVI_GRAPH_DIAGNOSTIC } from '../modules/08d_deep_evi_graph_diagnostic.nf'
 include { DEEP_EVI_INDEPENDENT_VALIDATION } from '../modules/08e_deep_evi_independent_validation.nf'
+
 workflow DEEP_EVI_PHASE {
     take:
     landscape
     edges
     scores
-    state_scores
-    split_manifest
+
     main:
     DEEP_EVI(landscape, edges, scores)
-    deep_scores = DEEP_EVI.out.csv.filter { it.name == 'GSE176078_deep_evi_scores.csv' }
-    deep_model = DEEP_EVI.out.model
-    deep_split = DEEP_EVI.out.csv.filter { it.name.toLowerCase().contains('split') && it.name.toLowerCase().contains('manifest') }
+
+    deep_scores = DEEP_EVI.out.csv
+        .filter { it.name == 'GSE176078_deep_evi_scores.csv' }
+        .first()
+    deep_model = DEEP_EVI.out.model.first()
+    deep_split = DEEP_EVI.out.csv
+        .filter { it.name.toLowerCase().contains('split') && it.name.toLowerCase().contains('manifest') }
+        .first()
+
     DEEP_EVI_CHARACTERIZATION(deep_scores)
-    DEEP_EVI_ABLATION(landscape, edges, deep_scores, split_manifest)
-    DEEP_EVI_GRAPH_DIAGNOSTIC(landscape, edges, deep_scores, split_manifest)
-    DEEP_EVI_INDEPENDENT_VALIDATION(landscape, deep_scores, state_scores, split_manifest)
+    DEEP_EVI_ABLATION(landscape, edges, deep_scores, deep_split)
+    DEEP_EVI_GRAPH_DIAGNOSTIC(landscape, edges, deep_scores, deep_split)
+
+    // 08E consumes the frozen 08A split manifest; it does not alter the model.
+    // Step 7B state scores are the second biological input to this robustness analysis.
+    // The state-score file is recovered from the 08A score table contract below.
+    state_scores = DEEP_EVI.out.csv
+        .filter { it.name == 'GSE176078_08A_state_scores.csv' }
+        .first()
+    DEEP_EVI_INDEPENDENT_VALIDATION(landscape, deep_scores, state_scores, deep_split)
+
     emit:
     scores = deep_scores
     model = deep_model
