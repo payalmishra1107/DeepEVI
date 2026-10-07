@@ -15,7 +15,6 @@ params {
     tcga_manifest = null
     reference_signatures = "${projectDir}/config/10a_benchmark_signatures.tsv"
     immune_subtypes = null
-    multifile_audit = null
 
     outdir = "results"
     run_tcga = true
@@ -71,11 +70,10 @@ workflow {
             params.tcga_raw,
             params.tcga_query,
             params.tcga_clinical,
-            params.tcga_manifest,
-            params.multifile_audit
+            params.tcga_manifest
         ]
         if (required.any { !it }) {
-            error "TCGA execution requires --tcga_raw, --tcga_query, --tcga_clinical, --tcga_manifest and --multifile_audit"
+            error "TCGA execution requires --tcga_raw, --tcga_query, --tcga_clinical and --tcga_manifest"
         }
 
         TCGA_VALIDATION(
