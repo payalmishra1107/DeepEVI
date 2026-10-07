@@ -2,7 +2,7 @@ nextflow.enable.dsl=2
 process AUDIT_PIPELINE {
     tag "DeepEVI master integrity audit"
     publishDir "${params.outdir}/audit", mode: 'copy', overwrite: true
-    conda "\${projectDir}/envs/ingestion.yml"
+    conda "${projectDir}/envs/ingestion.yml"
     input:
     path repo_root
     output:
