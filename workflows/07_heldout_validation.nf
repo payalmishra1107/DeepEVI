@@ -49,12 +49,12 @@ workflow HELDOUT_AND_EXTERNAL_VALIDATION {
         BUILD_10A_TEST_EXPRESSION.out.expression,
         SCORE_10A_REFERENCE_SIGNATURES.out.scores,
         SCORE_10A_REFERENCE_SIGNATURES.out.metadata,
-        RUN_10A_HELDOUT_BENCHMARK.out.report,
-        ANALYZE_10A5_STATE_AXIS.out.filter { it.name == 'GSE176078_10A5_associations.csv' },
-        ANALYZE_10A5_STATE_AXIS.out.filter { it.name == 'GSE176078_10A5_partial_associations.csv' },
-        ANALYZE_10A5B_OVERLAP_CONTROLLED.out.filter { it.name == 'GSE176078_10A5B_overlap_controlled_associations.csv' },
-        ANALYZE_10A5B_OVERLAP_CONTROLLED.out.filter { it.name == 'GSE176078_10A5B_partial_associations.csv' },
-        ANALYZE_10A5B_OVERLAP_CONTROLLED.out.filter { it.name == 'GSE176078_10A5B_report.json' }
+        RUN_10A_HELDOUT_BENCHMARK.out.report.first(),
+        ANALYZE_10A5_STATE_AXIS.out.filter { it.name == 'GSE176078_10A5_associations.csv' }.first(),
+        ANALYZE_10A5_STATE_AXIS.out.filter { it.name == 'GSE176078_10A5_partial_associations.csv' }.first(),
+        ANALYZE_10A5B_OVERLAP_CONTROLLED.out.filter { it.name == 'GSE176078_10A5B_overlap_controlled_associations.csv' }.first(),
+        ANALYZE_10A5B_OVERLAP_CONTROLLED.out.filter { it.name == 'GSE176078_10A5B_partial_associations.csv' }.first(),
+        ANALYZE_10A5B_OVERLAP_CONTROLLED.out.filter { it.name == 'GSE176078_10A5B_report.json' }.first()
     )
 
     VALIDATE_10B_TCGA_IMMUNE_SUBTYPES(
