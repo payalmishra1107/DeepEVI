@@ -11,13 +11,14 @@ process RUN_10A_HELDOUT_BENCHMARK {
     path reference_metadata
 
     output:
-    path "GSE176078_10A_test_cell_scores.csv"
-    path "GSE176078_10A_target_correlations.csv"
-    path "GSE176078_10A_program_correlations.csv"
-    path "GSE176078_10A_pairwise_correlations.csv"
-    path "GSE176078_10A_subset_auc.csv"
+    path "GSE176078_10A_benchmark_cell_table.csv"
+    path "GSE176078_10A_exhaustion_target_associations.csv"
+    path "GSE176078_10A_program_associations.csv"
+    path "GSE176078_10A_deep_evi_reference_associations.csv"
+    path "GSE176078_10A_subset_concordance.csv"
     path "GSE176078_10A_sample_summary.csv"
     path "GSE176078_10A_report.json"
+    path "GSE176078_10A_reference_metadata.csv"
 
     script:
     """
