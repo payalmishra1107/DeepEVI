@@ -997,4 +997,239 @@ def main():
         torch.save(
             {
                 "variant": variant,
-                "state_dict": model.state_dict(),
+                "state_dict": model.state_dict(),                "input_programs": programs,
+                "seed": args.seed,
+            },
+            outdir / f"GSE176078_08C_{variant}.pt",
+        )
+
+    # --------------------------------------------------------------
+    # Direct baseline
+    # --------------------------------------------------------------
+
+    direct_test = scores[
+        scores["split"] == "test"
+    ]
+
+    baseline = {
+        "variant": "direct_exhaustion_baseline",
+        "input_programs": "exhaustion_dysfunction_score",
+        "graph_used": False,
+        "exhaustion_supervision": False,
+        "test_evi_exhaustion_spearman": 1.0,
+        "test_evi_exhaustion_pearson": 1.0,
+        "note": (
+            "This is the direct target baseline and is not an "
+            "independent model. It defines the reference level "
+            "that a learned EVI must be interpreted against."
+        ),
+    }
+
+    results.append(baseline)
+
+    results_df = pd.DataFrame(results)
+
+    results_df.to_csv(
+        outdir / "GSE176078_08C_ablation_metrics.csv",
+        index=False,
+    )
+
+    history_df = pd.DataFrame(histories)
+
+    history_df.to_csv(
+        outdir / "GSE176078_08C_training_history.csv",
+        index=False,
+    )
+
+    latent_df = pd.DataFrame(latent_rows)
+
+    latent_df.to_csv(
+        outdir / "GSE176078_08C_variant_scores.csv",
+        index=False,
+    )
+
+    # --------------------------------------------------------------
+    # Patient-level summaries
+    # --------------------------------------------------------------
+
+    patient_rows = []
+
+    for variant in latent_df["variant"].unique():
+
+        if variant == "direct_exhaustion_baseline":
+            continue
+
+        v = latent_df[
+            latent_df["variant"] == variant
+        ]
+
+        for sample_id, g in v.groupby(
+            "sample_id"
+        ):
+
+            patient_rows.append({
+                "variant": variant,
+                "sample_id": sample_id,
+                "subtype": g["subtype"].iloc[0],
+                "split": g["split"].iloc[0],
+                "n_cells": len(g),
+                "mean_deep_evi": float(
+                    g["deep_evi_raw"].mean()
+                ),
+                "median_deep_evi": float(
+                    g["deep_evi_raw"].median()
+                ),
+                "std_deep_evi": float(
+                    g["deep_evi_raw"].std(ddof=1)
+                ) if len(g) > 1 else 0.0,
+            })
+
+    patient_df = pd.DataFrame(patient_rows)
+
+    patient_df.to_csv(
+        outdir / "GSE176078_08C_patient_level_summary.csv",
+        index=False,
+    )
+
+    # --------------------------------------------------------------
+    # Patient-level subtype analysis on test samples
+    # --------------------------------------------------------------
+
+    patient_test = patient_df[
+        patient_df["split"] == "test"
+    ].copy()
+
+    subtype_rows = []
+
+    for variant in patient_test["variant"].unique():
+
+        v = patient_test[
+            patient_test["variant"] == variant
+        ]
+
+        groups = []
+
+        for subtype in [
+            "ER+",
+            "HER2+",
+            "TNBC",
+        ]:
+
+            values = v.loc[
+                v["subtype"] == subtype,
+                "mean_deep_evi",
+            ].dropna()
+
+            if len(values):
+                groups.append(
+                    (subtype, values)
+                )
+
+        if len(groups) >= 2:
+
+            stat, pvalue = kruskal(
+                *[
+                    x[1].to_numpy()
+                    for x in groups
+                ]
+            )
+
+        else:
+            stat = np.nan
+            pvalue = np.nan
+
+        subtype_rows.append({
+            "variant": variant,
+            "test_patient_n": int(len(v)),
+            "kruskal_statistic": (
+                float(stat)
+                if np.isfinite(stat)
+                else np.nan
+            ),
+            "kruskal_pvalue": (
+                float(pvalue)
+                if np.isfinite(pvalue)
+                else np.nan
+            ),
+            "subtypes_present": ",".join(
+                x[0] for x in groups
+            ),
+        })
+
+    pd.DataFrame(subtype_rows).to_csv(
+        outdir / "GSE176078_08C_patient_level_subtype_test.csv",
+        index=False,
+    )
+
+    # --------------------------------------------------------------
+    # Report
+    # --------------------------------------------------------------
+
+    report = {
+        "cohort": "GSE176078",
+        "step": "08C_deep_evi_ablation_independence",
+        "status": "complete",
+        "cells": int(len(scores)),
+        "samples": int(scores["sample_id"].nunique()),
+        "sample_split_reused_from_08A": True,
+        "variants": [
+            {
+                "name": "full",
+                "programs": ALL_PROGRAMS,
+                "graph": True,
+                "exhaustion_supervision": True,
+            },
+            {
+                "name": "no_exhaustion",
+                "programs": NO_EXHAUSTION_PROGRAMS,
+                "graph": True,
+                "exhaustion_supervision": False,
+            },
+            {
+                "name": "no_graph",
+                "programs": ALL_PROGRAMS,
+                "graph": False,
+                "exhaustion_supervision": True,
+            },
+            {
+                "name": "direct_exhaustion_baseline",
+                "programs": [
+                    "exhaustion_dysfunction_score"
+                ],
+                "graph": False,
+                "exhaustion_supervision": False,
+            },
+        ],
+        "leakage_controls": {
+            "sample_level_split": True,
+            "same_08A_split_manifest": True,
+            "cross_split_graph_edges_removed": True,
+            "feature_scaling_training_only": True,
+            "target_scaling_training_only": True,
+            "no_exhaustion_variant_uses_exhaustion_as_input": True,
+            "no_exhaustion_variant_has_exhaustion_training_loss": True,
+            "test_used_for_model_selection": False,
+            "evi_orientation_training_only": True,
+        },
+        "scientific_interpretation": (
+            "08C evaluates whether graph learning and multivariate "
+            "T-cell state representation contribute information "
+            "beyond direct reconstruction of the exhaustion-associated "
+            "training target. The no-exhaustion variant removes the "
+            "exhaustion score from both inputs and supervision."
+        ),
+    }
+
+    with open(
+        outdir / "GSE176078_08C_report.json",
+        "w",
+    ) as handle:
+        json.dump(
+            report,
+            handle,
+            indent=2,
+        )
+
+
+if __name__ == "__main__":
+    main()
