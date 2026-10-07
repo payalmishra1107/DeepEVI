@@ -57,7 +57,6 @@ workflow {
     DEEP_EVI_PHASE(
         trajectory_landscape,
         trajectory_edges,
-        state_scores,
         state_scores
     )
 
@@ -83,8 +82,7 @@ workflow {
             Channel.fromPath(params.tcga_raw, type: 'dir', checkIfExists: true).first(),
             Channel.fromPath(params.tcga_query, checkIfExists: true).first(),
             Channel.fromPath(params.tcga_clinical, checkIfExists: true).first(),
-            Channel.fromPath(params.tcga_manifest, checkIfExists: true).first(),
-            Channel.fromPath(params.multifile_audit, checkIfExists: true).first()
+            Channel.fromPath(params.tcga_manifest, checkIfExists: true).first()
         )
     }
 
