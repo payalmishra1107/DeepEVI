@@ -26,50 +26,58 @@ This project is designed as a complete computational research workflow rather th
 
 ## End-to-end workflow
 
+The canonical scientific workflow is orchestrated by **one Nextflow DSL2 entrypoint**:
+
 ```text
 GSE176078
-   │
-   ├── 01 Ingestion / inventory
-   ├── 02 QC
-   ├── 03 Normalization
-   ├── 04 Cohort assembly
-   ├── 05 HVG + PCA
-   ├── 06 Harmony candidate
-   ├── 06A Quantitative integration evaluation
-   │
-   ├── 07A TME / T-cell validation
-   ├── 07B T-cell expression programs
-   └── 07C T-cell state landscape + KNN graph
-             │
-             ▼
-       08A Deep-EVI
-             ├── 08B characterization
-             ├── 08C ablation
-             ├── 08D graph diagnostics
-             └── 08E construct/robustness analysis
-             │
-             ▼
-       09A Frozen TCGA-compatible molecular surrogate
-             ├── 09B TCGA projection
-             ├── 09C survival analysis
-             ├── 09D adjusted models
-             └── 09E biological concordance
-             │
-             ▼
-       10A Frozen held-out benchmark
-             │
-             ▼
-       10B Independent TCGA-BRCA validation
-             │
-             ▼
-       11 Explainable Deep-EVI
-             ├── program attribution
-             ├── graph-edge attribution
-             ├── molecular attribution
-             └── gene attribution
+   |
+01 provenance
+   |
+02 QC
+   |
+03 normalization
+   |
+04 cohort assembly
+   |
+05 HVG + PCA
+   |
+06 Harmony candidate
+   |------ 06A quantitative evaluation
+   |------ 06B standardized benchmark
+   |
+07A TME / T-cell validation
+   |
+07B T-cell expression programs
+   |
+07C expression-state landscape + KNN graph
+   |
+08A Deep-EVI
+   |------ 08B characterization
+   |------ 08C ablation
+   |------ 08D graph diagnostics
+   |------ 08E robustness
+   |
+FROZEN MODEL
+   |
+   +---- 09A frozen TCGA molecular surrogate
+   |        |
+   |       09B TCGA projection
+   |        |--- 09C survival
+   |        |--- 09D bulk composition
+   |        |--- 09E biological concordance
+   |
+   +---- 10A held-out benchmark
+   |        |--- 10A-5 state-axis analysis
+   |        |--- 10A-5B overlap-controlled analysis
+   |
+   +---- 10B independent TCGA-BRCA validation
+   |
+   +---- 11 frozen-model XAI
 ```
 
----
+**Canonical execution:** `main.nf` orchestrates the complete computational chain.
+
+**Checkpoint execution:** `main_step*.nf` files reproduce individual frozen stages for debugging, review and checkpoint-level reproducibility. They are secondary interfaces, not separate scientific pipelines.
 
 ## Primary cohort
 
@@ -200,58 +208,51 @@ These are model attributions, not causal biological effects.
 
 ## Reproducibility architecture
 
-The repository is intentionally organized around Nextflow rather than notebooks.
+The repository is organized in four computational layers:
 
 ```text
-DeepEVI/
-├── main.nf
-├── main_step8a.nf
-├── main_step9a.nf
-├── main_step10a.nf
-├── main_step10b.nf
-├── main_step11.nf
-├── nextflow.config
-│
-├── modules/
-│   ├── 01_ingest.nf
-│   ├── 02_qc.nf
-│   ├── 03_normalization.nf
-│   ├── 04_cohort_assembly.nf
-│   ├── 05_integration.nf
-│   ├── 06_harmony.nf
-│   ├── 06a_evaluation.nf
-│   ├── 07a_biological_validation.nf
-│   ├── 07b_tcell_state.nf
-│   ├── 07c_tcell_trajectory.nf
-│   ├── 08_deep_evi.nf
-│   ├── 08b_deep_evi_characterization.nf
-│   ├── 08c_deep_evi_ablation.nf
-│   ├── 08d_deep_evi_graph_diagnostic.nf
-│   ├── 08e_deep_evi_independent_validation.nf
-│   ├── 09a_tcga_signature.nf
-│   ├── 10b_tcga_immune_validation.nf
-│   └── 11_deep_evi_xai.nf
-│
-├── bin/
-├── envs/
-├── conf/
-├── config/
-├── docs/
-├── tests/
-└── results/
+main.nf
+   |
+workflows/
+   |
+modules/
+   |
+bin/
+   |
+envs/ + conf/ + config/
 ```
 
-### Reproducible execution
+### Canonical entrypoint
 
 ```bash
-nextflow run main.nf -profile conda,workstation
+nextflow run main.nf -profile conda,workstation \
+  --primary_raw_dir /path/to/GSE176078_RAW \
+  --tcga_raw /path/to/tcga_brca/raw/star_counts \
+  --tcga_query /path/to/TCGA-BRCA_STAR_Counts_query.json \
+  --tcga_clinical /path/to/TCGA-BRCA_clinical.tsv \
+  --tcga_manifest /path/to/TCGA-BRCA_STAR_Counts_manifest.tsv \
+  --multifile_audit /path/to/multifile_case_file_level_scores.csv \
+  --immune_subtypes /path/to/Subtype_Immune_Model_Based.txt \
+  --reference_signatures config/10a_benchmark_signatures.tsv \
+  --outdir results \
+  -resume
 ```
 
-Individual frozen stages are exposed through the `main_step*.nf` entry points.
+The primary and TCGA human genomic inputs remain external user-supplied data. The repository contains code, scientific definitions, compact summaries, manifests and provenance rather than redistributed raw genomic data.
 
-The pipeline uses Conda environments per analytical stage and Nextflow process-level resource configuration.
+### Phase architecture
 
----
+| Phase | Nextflow workflow | Purpose |
+|---|---|---|
+| 01 | `workflows/01_ingestion.nf` | provenance and input inventory |
+| 02 | `workflows/02_preprocessing.nf` | QC, normalization, cohort assembly |
+| 03 | `workflows/03_integration.nf` | HVG/PCA, Harmony and integration evaluation |
+| 04 | `workflows/04_tcell_analysis.nf` | biological validation and T-cell state modelling |
+| 05 | `workflows/05_deep_evi.nf` | Deep-EVI and model diagnostics |
+| 06 | `workflows/06_tcga_validation.nf` | frozen TCGA bridge and bulk analyses |
+| 07 | `workflows/07_heldout_validation.nf` | held-out and independent validation |
+| 08 | `workflows/08_xai.nf` | frozen-model explainability |
+| 09 | `workflows/09_audit.nf` | integrity auditing |
 
 ## Scientific safeguards
 
