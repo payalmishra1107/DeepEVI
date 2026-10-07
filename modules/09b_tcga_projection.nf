@@ -4,7 +4,7 @@ process TCGA_BRCA_09B {
     memory '10 GB'
     time '8h'
     maxForks 1
-    conda "\${projectDir}/envs/deep_evi_tcga_validation.yml"
+    conda "${projectDir}/envs/deep_evi_tcga_validation.yml"
     input:
     path raw_dir
     path query_json
@@ -16,7 +16,7 @@ process TCGA_BRCA_09B {
     path "*.csv", emit: tables
     script:
     """
-    python \${projectDir}/bin/run_tcga_brca_09b.py \
+    python ${projectDir}/bin/run_tcga_brca_09b.py \
         --raw-dir ${raw_dir} \
         --query-json ${query_json} \
         --clinical-tsv ${clinical_tsv} \
