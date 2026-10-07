@@ -101,12 +101,8 @@ workflow {
             error "Held-out/external validation requires --immune_subtypes for Step 10B."
         }
 
-        tcga_scores = TCGA_VALIDATION.out.projection
-            .filter { it.name == 'TCGA_BRCA_09B_TCGA_BRCA_scores.csv' }
-            .first()
-        tcga_inventory = TCGA_VALIDATION.out.projection
-            .filter { it.name == 'TCGA_BRCA_09B_TCGA_BRCA_case_inventory.csv' }
-            .first()
+        tcga_scores = TCGA_VALIDATION.out.projection_scores
+        tcga_inventory = TCGA_VALIDATION.out.projection_inventory
 
         HELDOUT_AND_EXTERNAL_VALIDATION(
             INTEGRATION.out.latent.first(),
@@ -126,8 +122,6 @@ workflow {
         }
 
         signature = TCGA_VALIDATION.out.signature
-            .filter { it.name == 'GSE176078_09A_frozen_signature.json' }
-            .first()
 
         XAI(
             deep_scores,
