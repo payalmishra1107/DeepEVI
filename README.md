@@ -151,6 +151,69 @@ These are associations with a training-derived exhaustion target. They are **not
 
 ---
 
+## Benchmark Study
+
+### Objective
+
+The benchmark asks a specific question:
+
+> **Does the frozen Deep-EVI score recover an exhaustion-associated T-cell state on cells that were never used for model fitting or model selection, and does it behave consistently with predefined external T-cell state references?**
+
+The benchmark is deliberately separated from model training and from the external TCGA-BRCA validation.
+
+### Benchmark design
+
+Step 10A evaluates the **frozen** Deep-EVI model on the exact held-out population from Step 08A:
+
+- **9,864 held-out T cells**
+- **5 held-out samples**
+- **6 predefined reference signatures**
+- Deep-EVI **not retrained**
+- test cells **not used for training**
+- test cells **not used for model selection**
+- TCGA data **not used**
+- reference scores **not refit**
+- reference-gene overlap with Deep-EVI construction genes explicitly audited
+- patient-level inference avoided because only five held-out samples are available
+
+### Held-out reference benchmark
+
+| Representation / reference | Spearman rho | Pearson r |
+|---|---:|---:|
+| **Deep-EVI vs exhaustion target** | **0.949793** | **0.992500** |
+| Terminal-exhaustion reference | **0.970577** | **0.981107** |
+| Sade-Feldman dysfunctional reference | 0.884936 | 0.883639 |
+| Van der Leun 2022 reference | 0.787964 | 0.881975 |
+| Progenitor-TPEX reference | **-0.373697** | **-0.374716** |
+| Cytotoxic control | 0.312118 | 0.429753 |
+| Memory-progenitor reference | **-0.420898** | **-0.436254** |
+
+The directionality is biologically coherent: Deep-EVI is strongly aligned with terminal-exhaustion/dysfunction references and inversely related to progenitor/memory-oriented references.
+
+### Subset concordance
+
+A representative CD8/LAG3 exhaustion-associated state showed an AUC of **0.910133** for Deep-EVI on the held-out population. This supports state-level concordance beyond the single scalar exhaustion target.
+
+### Overlap-controlled analysis
+
+Reference-gene overlap was explicitly quantified because several published exhaustion signatures share genes with the Deep-EVI construction programs. The overlap-controlled analysis showed that part of the raw state-axis association is explained by direct molecular overlap, while a **residual positive relationship remains after construction genes are removed**.
+
+This is important scientifically: the benchmark supports **construct validity and robustness**, but it is not described as independent biological validation.
+
+### What the benchmark establishes
+
+The benchmark supports the conclusion that Deep-EVI:
+
+1. generalizes to unseen cells/samples under a leakage-controlled split;
+2. recovers the intended exhaustion-associated molecular axis;
+3. agrees with independent reference definitions of terminal exhaustion/dysfunction;
+4. moves in the expected opposite direction to progenitor/memory-oriented states;
+5. retains signal after explicit construction-gene overlap control.
+
+It does **not** establish causality, temporal progression, RNA velocity, or clinical utility.
+
+---
+
 ## Independent TCGA-BRCA validation
 
 The frozen GSE176078-derived molecular surrogate was projected into TCGA-BRCA without retraining or refitting.
@@ -203,6 +266,75 @@ The frozen TCGA molecular surrogate is dominated by the exhaustion/dysfunction c
 The gene-level decomposition contains 33 genes, with high reconstructed weights including CXCL13, PDCD1, TIGIT, CTLA4, TOX, TOX2, LAG3, HAVCR2 and ENTPD1.
 
 These are model attributions, not causal biological effects.
+
+---
+
+## Scientific Interpretation, Study Answer & Results
+
+### Scientific question
+
+**Can a graph-learned representation of T-cell transcriptional state provide a reproducible, biologically interpretable index of exhaustion across breast-cancer single-cell data, while remaining testable on held-out cells and an external TCGA-BRCA cohort?**
+
+### Study design
+
+The study begins with **100,064 cells from 26 breast-cancer samples** in GSE176078 and identifies a curated T-cell compartment of **35,214 cells**. Six complementary biological programs—T-cell identity, CD8 cytotoxicity, Treg state, Tfh state, activation/effector state, and exhaustion/dysfunction—are used to define the T-cell state space.
+
+A sample-level split and split-restricted 30-nearest-neighbour graph are then used to train Deep-EVI. The model learns a latent representation through sparse graph convolution and multi-task objectives. A frozen molecular surrogate is subsequently derived for external TCGA-BRCA projection.
+
+### Scientific answer
+
+**Deep-EVI successfully recovers a continuous exhaustion-associated T-cell state that generalizes to held-out cells and shows concordance with predefined exhaustion reference signatures.** The evidence is strongest for construct validity and external biological concordance rather than causal or clinical prediction.
+
+### Main results
+
+**1. T-cell state modelling**
+
+The 35,214-cell T-cell compartment forms a structured transcriptional state landscape spanning identity, cytotoxicity, regulatory/Tfh states, activation and exhaustion-associated programs. The graph representation captures local relationships between cells while preserving the sample-level separation required for leakage control.
+
+**2. Held-out model performance**
+
+On 9,864 held-out T cells from five held-out samples:
+
+- Spearman correlation with the exhaustion target: **0.949793**
+- Pearson correlation with the exhaustion target: **0.992500**
+- RMSE: **0.2055**
+- MAE: **0.1372**
+- R²: **0.9727**
+
+These values demonstrate recovery of the targeted exhaustion-associated molecular axis. Because the exhaustion program was an auxiliary training target, these metrics are **not independent biological validation**.
+
+**3. External reference concordance**
+
+The frozen score correlates strongly with a predefined terminal-exhaustion reference (Spearman **0.970577**) and dysfunctional-T-cell references, while showing negative associations with progenitor/memory-oriented references. The overlap-controlled analysis further tests whether the signal survives removal of construction genes.
+
+**4. Independent TCGA-BRCA validation**
+
+A frozen 33-gene molecular surrogate was projected into **1,095 TCGA-BRCA expression cases** without refitting against TCGA outcomes or immune-subtype labels. For the final immune-subtype analysis, **1,083 participants** were matched across five represented subtypes (C1, C2, C3, C4 and C6; C5 was absent).
+
+The global subtype comparison was highly significant:
+
+- Kruskal–Wallis H = **276.623117**
+- p = **1.191353 × 10⁻⁵⁸**
+
+The pre-specified C2+C3 versus C4+C6 contrast yielded:
+
+- n = **582 vs 132**
+- directional rank-biserial effect = **0.535666**
+- p = **6.778021 × 10⁻²²**
+
+This provides the principal independent biological validation of the frozen molecular surrogate against an external immune-state classification.
+
+**5. Clinical interpretation**
+
+Unadjusted TCGA survival analyses show an association with outcome, but the association attenuates after adjustment for age and stage and is sensitive to bulk immune composition. Therefore, this repository **does not claim independent prognostic utility or clinical prediction**.
+
+**6. Biological interpretation and XAI**
+
+The frozen model attributes most of its program-level signal to the exhaustion/dysfunction component. Molecular decomposition highlights exhaustion-associated genes including **PDCD1, LAG3, TIGIT, HAVCR2, CTLA4, TOX, TOX2, ENTPD1 and CXCL13**. These are model-attribution results and should be interpreted as biologically informative hypotheses rather than causal effects.
+
+### Overall scientific conclusion
+
+> **Deep-EVI provides a reproducible graph-learned representation of exhaustion-associated T-cell state in breast cancer. Its strongest evidence is the combination of leakage-controlled held-out construct benchmarking, agreement with external exhaustion-state references, and independent TCGA-BRCA immune-subtype concordance. The framework supports biological interpretation and biomarker hypothesis generation, but it does not establish temporal exhaustion, causality, or clinical utility.**
 
 ---
 
