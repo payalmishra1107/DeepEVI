@@ -49,10 +49,14 @@ jobs:
       - name: Validate Nextflow configuration
         run: nextflow config nextflow.config
 
-      - name: Preview core preprocessing entrypoint
+      - name: Preview canonical workflow graph
         run: |
           mkdir -p tests/fixtures/primary_raw
           nextflow run main.nf \
-            --primary_raw_dir tests/fixtures/primary_raw \
+            --primary_raw_dir "$PWD/tests/fixtures/primary_raw" \
             --outdir results_ci \
+            --run_tcga false \
+            --run_heldout false \
+            --run_xai false \
+            --run_audit false \
             -preview
