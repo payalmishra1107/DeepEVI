@@ -1,0 +1,7 @@
+signature_id	signature_name	category	genes	source_reference
+SADE_FELDMAN_DYSFUNCTIONAL	Sade-Feldman dysfunctional CD8 T-cell signature	exhaustion	LAG3;PDCD1;HAVCR2;TIGIT;CD38;ENTPD1	Sade-Feldman et al.; reported gene set reproduced in Cancer Discovery
+VAN_DER_LEUN_22	Van der Leun 22-gene exhaustion/dysfunction reference	exhaustion	LAYN;ITGAE;PDCD1;CTLA4;HAVCR2;LAG3;TIGIT;CXCL13;CD38;ENTPD1;CDK1;HSPH1;CCNB1;HSPB1;MKI67;CDK4;GZMB;TOX;IFNG;MIR155HG;TNFRSF9;RB1	Van der Leun et al.; 22-gene set reproduced in Cancer Discovery
+PROGENITOR_TPEX	Progenitor/precursor exhausted T-cell reference	progenitor	TCF7;SLAMF6;CXCR5;CCR7;SELL;IL7R	Progenitor/TPEX reference; marker set selected to represent stem-like/progenitor state
+TERMINAL_EXHAUSTION	Terminal exhaustion reference	exhaustion	HAVCR2;LAG3;PDCD1;TOX;ENTPD1;CXCL13;TIGIT	Terminal exhaustion reference construct
+CYTOTOXIC_CONTROL	Cytotoxic effector control	control	GZMA;GZMB;GZMH;PRF1;GNLY;NKG7;CTSW	Cytotoxic T-cell reference construct
+MEMORY_PROGENITOR	Memory/progenitor control	progenitor	TCF7;IL7R;CCR7;SELL;LEF1;MALAT1	Memory/progenitor control; descriptive only
